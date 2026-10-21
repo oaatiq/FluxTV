@@ -1,0 +1,10 @@
+<resources>
+    <!-- Fullscreen, no action bar, black background. Compose draws everything. -->
+    <style name="Theme.FluxTV" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentTransitions">false</item>
+    </style>
+</resources>

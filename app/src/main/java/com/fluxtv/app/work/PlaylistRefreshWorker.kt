@@ -1,0 +1,61 @@
+package com.fluxtv.app.work
+
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.fluxtv.app.FluxTvApplication
+import com.fluxtv.app.data.repository.RefreshOutcome
+import kotlinx.coroutines.flow.first
+import java.util.concurrent.TimeUnit
+
+/**
+ * Refreshes the playlist in the background with no Viewer intervention (REQ-PL-004).
+ * A failed refresh never discards the existing playlist (REQ-PL-005); the work simply retries.
+ */
+class PlaylistRefreshWorker(
+    appContext: Context,
+    params: WorkerParameters
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val app = applicationContext as? FluxTvApplication ?: return Result.success()
+        val settings = app.container.settingsRepository.settings.first()
+        if (!settings.isConfigured) return Result.success()
+
+        app.container.channelRepository.loadFromCache()
+        val outcome = app.container.channelRepository.refresh(
+            settings.playlistUrl!!,
+            settings.playlistType,
+            settings.playlistName
+        )
+        return when (outcome) {
+            is RefreshOutcome.Success -> Result.success()
+            is RefreshOutcome.Failed -> Result.retry()
+        }
+    }
+
+    companion object {
+        private const val WORK_NAME = "flux_playlist_refresh"
+
+        fun schedule(context: Context, hours: Int = 12) {
+            val request = PeriodicWorkRequestBuilder<PlaylistRefreshWorker>(
+                hours.toLong().coerceAtLeast(1), TimeUnit.HOURS
+            ).setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            ).build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                WORK_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                request
+            )
+        }
+    }
+}

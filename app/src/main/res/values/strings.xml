@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">FluxTV</string>
+
+    <!-- Startup -->
+    <string name="starting">Starting television…</string>
+    <string name="preparing_channel">Preparing channel…</string>
+
+    <!-- Easy Mode messages (REQ-SEN-013, §20 error philosophy) -->
+    <string name="msg_connection_interrupted">Connection interrupted. Trying again…</string>
+    <string name="msg_service_unavailable">TV service temporarily unavailable.</string>
+    <string name="msg_channel_unavailable">Channel temporarily unavailable.</string>
+    <string name="msg_cannot_play">Unable to play this channel.</string>
+    <string name="msg_no_network">No network connection.</string>
+    <string name="msg_buffering">Please wait…</string>
+
+    <!-- Recovery prompt (REQ-REC-005) -->
+    <string name="recovery_title">This channel is temporarily unavailable.</string>
+    <string name="recovery_try_again">Try again</string>
+    <string name="recovery_change_channel">Change channel (▲ / ▼)</string>
+
+    <!-- Channel list -->
+    <string name="channel_list_title">Channels</string>
+    <string name="tab_all">All channels</string>
+    <string name="tab_favorites">Favorites</string>
+    <string name="no_favorites">No favorite channels yet.</string>
+    <string name="no_channels">No channels. Open Settings to add a playlist.</string>
+
+    <!-- Admin -->
+    <string name="admin_title">FluxTV Settings</string>
+    <string name="admin_playlist">Playlist</string>
+    <string name="admin_channels">Channels &amp; favorites</string>
+    <string name="admin_preferences">Preferences</string>
+    <string name="admin_diagnostics">Diagnostics</string>
+    <string name="admin_exit">Back to TV</string>
+</resources>
