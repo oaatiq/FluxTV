@@ -122,6 +122,10 @@ class FluxPlayerController(
         _diagnostics.value = DiagnosticsSnapshot(
             channelName = channel.name,
             channelUrl = channel.url,
+            // The codec is usually reused across channels, so no "decoder initialized" event follows;
+            // keep showing it until a new decoder replaces it.
+            videoDecoder = lastVideoDecoder,
+            hardwareDecoding = lastVideoDecoder?.let { !isSoftwareDecoderName(it) },
             playbackState = "PREPARING"
         )
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
