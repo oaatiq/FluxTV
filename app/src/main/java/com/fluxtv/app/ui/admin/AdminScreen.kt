@@ -55,10 +55,11 @@ private enum class AdminSection { MENU, PLAYLIST, CHANNELS, PREFERENCES, DIAGNOS
 
 /**
  * Administrator area, fully separated from Easy Mode (REQ-GEN-003, REQ-CFG-003) and optionally
- * protected by a PIN (REQ-CFG-004). Reached only by a deliberate gesture (hold OK / MENU).
+ * protected by a PIN (REQ-CFG-004). Reached only by a deliberate gesture (hold OK / MENU). It also
+ * holds "Exit FluxTV", the only in-app way to close the app (Back never exits; Home always leaves).
  */
 @Composable
-fun AdminScreen(state: UiState, vm: AppViewModel) {
+fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
     var unlocked by remember { mutableStateOf(state.settings.adminPin.isBlank()) }
     if (!unlocked) {
         PinGate(expected = state.settings.adminPin, onUnlock = { unlocked = true }, onCancel = { vm.exitAdmin() })
@@ -72,7 +73,12 @@ fun AdminScreen(state: UiState, vm: AppViewModel) {
 
     Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp)) {
         when (section) {
-            AdminSection.MENU -> AdminMenu(state, onSelect = { section = it }, onExit = { vm.exitAdmin() })
+            AdminSection.MENU -> AdminMenu(
+                state,
+                onSelect = { section = it },
+                onExit = { vm.exitAdmin() },
+                onExitApp = onExitApp
+            )
             AdminSection.PLAYLIST -> PlaylistSection(state, vm)
             AdminSection.CHANNELS -> ChannelsSection(state, vm)
             AdminSection.PREFERENCES -> PreferencesSection(state, vm)
@@ -109,7 +115,12 @@ private fun PinGate(expected: String, onUnlock: () -> Unit, onCancel: () -> Unit
 }
 
 @Composable
-private fun AdminMenu(state: UiState, onSelect: (AdminSection) -> Unit, onExit: () -> Unit) {
+private fun AdminMenu(
+    state: UiState,
+    onSelect: (AdminSection) -> Unit,
+    onExit: () -> Unit,
+    onExitApp: () -> Unit
+) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -123,7 +134,11 @@ private fun AdminMenu(state: UiState, onSelect: (AdminSection) -> Unit, onExit: 
         FluxButton("Channels & favorites", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
         FluxButton("Preferences", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
         FluxButton("Diagnostics", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
-        FluxButton("Back to TV", Modifier.fillMaxWidth(0.55f)) { onExit() }
+        // Side by side so the menu keeps its five rows and still fits a 720p screen.
+        Row(Modifier.fillMaxWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
+            FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
+        }
     }
 }
 

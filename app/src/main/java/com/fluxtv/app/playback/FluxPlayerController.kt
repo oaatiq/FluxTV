@@ -19,7 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -159,9 +158,13 @@ class FluxPlayerController(
             it.removeAnalyticsListener(analyticsListener)
             it.release()
         }
+        stabilityJob?.cancel()
         bundle = null
         _playerReady.value = false
-        scope.cancel()
+        // The scope stays alive on purpose: this controller is a process-wide singleton that outlives
+        // the activity (Exit closes the activity, the process may be reused), and recovery retries,
+        // logging and the network-restore collector all run in it. The next playChannel() builds a
+        // fresh player.
     }
 
     fun clearDiagnostics() {

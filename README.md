@@ -113,8 +113,9 @@ adb shell cmd package compile -m speed -f com.fluxtv.app
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
 
-Back never exits the app accidentally — use **Home** to leave. Accidental repeated presses are
-debounced to one action per press.
+Back never exits the app accidentally. To leave, press **Home** (the app stays in the background), or to
+close it completely open **Settings** (hold OK, or MENU) and choose **Exit FluxTV**. Accidental
+repeated presses are debounced to one action per press.
 
 ## Administrator / Settings
 

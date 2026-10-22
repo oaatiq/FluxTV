@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
         frameRateController = FrameRateController(this)
         if (intent?.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false) == true) BootTrace.markLaunchedByBoot()
 
-        setContent { FluxApp(viewModel) }
+        setContent { FluxApp(viewModel, onExit = ::finishAndRemoveTask) }
 
         // Match the display mode to the source frame rate when enabled (§14).
         lifecycleScope.launch {

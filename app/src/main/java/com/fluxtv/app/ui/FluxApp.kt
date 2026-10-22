@@ -15,14 +15,14 @@ import com.fluxtv.app.ui.theme.FluxTheme
 
 /** Routes between the three top-level modes (§25): STARTING, EASY (watching), ADMIN. */
 @Composable
-fun FluxApp(vm: AppViewModel) {
+fun FluxApp(vm: AppViewModel, onExit: () -> Unit) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     FluxTheme {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             when (state.mode) {
                 AppMode.STARTING -> StartingScreen(state.startupMessage)
                 AppMode.EASY -> EasyModeScreen(state, vm)
-                AppMode.ADMIN -> AdminScreen(state, vm)
+                AppMode.ADMIN -> AdminScreen(state, vm, onExit)
             }
         }
     }
