@@ -89,6 +89,25 @@ class MainActivity : ComponentActivity() {
         return handleRemoteKey(event) || super.dispatchKeyEvent(event)
     }
 
+    private var holdStartedAt = 0L
+    private var lastHoldStepAt = 0L
+
+    // Tap = one channel. Holding past 2s keeps stepping one channel every 0.5s. Some remotes report
+    // downTime == eventTime on every repeat, so the hold is timed here.
+    private fun zap(event: KeyEvent, upward: Boolean) {
+        if (event.action != KeyEvent.ACTION_DOWN) return
+        val now = SystemClock.elapsedRealtime()
+        if (event.repeatCount == 0) {
+            holdStartedAt = now
+            lastHoldStepAt = now
+            if (upward) viewModel.channelUp() else viewModel.channelDown()
+            return
+        }
+        if (now - holdStartedAt < 2000L || now - lastHoldStepAt < 500L) return
+        lastHoldStepAt = now
+        if (upward) viewModel.channelUp() else viewModel.channelDown()
+    }
+
     private fun handleRemoteKey(event: KeyEvent): Boolean {
         val state = viewModel.uiState.value
         // In STARTING / ADMIN, let Compose handle focus navigation and Back.
@@ -108,11 +127,11 @@ class MainActivity : ComponentActivity() {
 
         when (code) {
             KeyEvent.KEYCODE_CHANNEL_UP -> {
-                if (firstDown) viewModel.channelUp()
+                zap(event, true)
                 return true
             }
             KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                if (firstDown) viewModel.channelDown()
+                zap(event, false)
                 return true
             }
 
@@ -123,14 +142,14 @@ class MainActivity : ComponentActivity() {
 
             KeyEvent.KEYCODE_DPAD_UP -> {
                 if (state.overlay == EasyOverlay.NONE) {
-                    if (firstDown) viewModel.channelUp()
+                    zap(event, true)
                     return true
                 }
                 return false
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
                 if (state.overlay == EasyOverlay.NONE) {
-                    if (firstDown) viewModel.channelDown()
+                    zap(event, false)
                     return true
                 }
                 return false
