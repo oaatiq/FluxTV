@@ -151,6 +151,8 @@ class AppViewModel(
             _state.update { it.copy(mode = AppMode.EASY) }
             if (lineup.isNotEmpty()) {
                 val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
+                // Restore the channel watched before this one so Back works right after launch.
+                previousChannelId = s.previousChannelStableId?.takeIf { it != target.stableId }
                 tuneTo(target)
             }
 
@@ -179,7 +181,8 @@ class AppViewModel(
             )
         }
         container.playerController.playChannel(channel)
-        viewModelScope.launch { container.settingsRepository.setLastChannel(channel.stableId) }
+        val previous = previousChannelId
+        viewModelScope.launch { container.settingsRepository.setLastChannel(channel.stableId, previous) }
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {
             delay(4500)
@@ -200,8 +203,12 @@ class AppViewModel(
     }
 
     fun recallPrevious() {
-        val prev = previousChannelId ?: return
-        val channel = _state.value.channels.firstOrNull { it.stableId == prev } ?: return
+        val channel = previousChannelId?.let { prev -> _state.value.channels.firstOrNull { it.stableId == prev } }
+        if (channel == null) {
+            // Never leave Back looking dead (REQ-PERF-001).
+            showTransient("No previous channel")
+            return
+        }
         tuneTo(channel)
     }
 

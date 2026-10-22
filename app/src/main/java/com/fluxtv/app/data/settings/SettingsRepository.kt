@@ -23,6 +23,7 @@ data class FluxSettings(
     val playlistName: String? = null,
     val playlistType: String = "url",
     val lastChannelStableId: String? = null,
+    val previousChannelStableId: String? = null,
     val favorites: Set<String> = emptySet(),
     val favoritesOnly: Boolean = false,
     val adminPin: String = "",
@@ -40,6 +41,7 @@ class SettingsRepository(private val context: Context) {
         val PLAYLIST_NAME = stringPreferencesKey("playlist_name")
         val PLAYLIST_TYPE = stringPreferencesKey("playlist_type")
         val LAST_CHANNEL = stringPreferencesKey("last_channel")
+        val PREVIOUS_CHANNEL = stringPreferencesKey("previous_channel")
         val FAVORITES = stringSetPreferencesKey("favorites")
         val FAVORITES_ONLY = booleanPreferencesKey("favorites_only")
         val ADMIN_PIN = stringPreferencesKey("admin_pin")
@@ -54,6 +56,7 @@ class SettingsRepository(private val context: Context) {
             playlistName = p[Keys.PLAYLIST_NAME],
             playlistType = p[Keys.PLAYLIST_TYPE] ?: "url",
             lastChannelStableId = p[Keys.LAST_CHANNEL],
+            previousChannelStableId = p[Keys.PREVIOUS_CHANNEL],
             favorites = p[Keys.FAVORITES] ?: emptySet(),
             favoritesOnly = p[Keys.FAVORITES_ONLY] ?: false,
             adminPin = p[Keys.ADMIN_PIN] ?: "",
@@ -71,8 +74,13 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun setLastChannel(stableId: String) {
-        context.dataStore.edit { it[Keys.LAST_CHANNEL] = stableId }
+    /** Remembers the watched channel and the one before it, so Back can recall it after a restart. */
+    suspend fun setLastChannel(stableId: String, previousStableId: String?) {
+        context.dataStore.edit {
+            it[Keys.LAST_CHANNEL] = stableId
+            if (previousStableId != null) it[Keys.PREVIOUS_CHANNEL] = previousStableId
+            else it.remove(Keys.PREVIOUS_CHANNEL)
+        }
     }
 
     suspend fun toggleFavorite(stableId: String) {
