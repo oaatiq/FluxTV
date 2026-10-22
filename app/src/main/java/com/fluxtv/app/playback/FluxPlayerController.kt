@@ -57,6 +57,7 @@ class FluxPlayerController(
 
     private var retryJob: Job? = null
     private var bufferingWatchdog: Job? = null
+    private var slowRetryJob: Job? = null
 
     private val _status = MutableStateFlow(PlaybackStatus())
     val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
@@ -99,6 +100,7 @@ class FluxPlayerController(
         val p = bundle!!.player
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
+        slowRetryJob?.cancel()
         currentChannel = channel
         recovery.reset()
         bufferingEvents = 0
@@ -127,6 +129,7 @@ class FluxPlayerController(
 
     /** User pressed "Try again" on the recovery prompt (REQ-REC-005). Resets the budget. */
     fun retryNow() {
+        slowRetryJob?.cancel()
         recovery.reset()
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         reprepareCurrent("manual retry")
@@ -143,6 +146,7 @@ class FluxPlayerController(
     fun release() {
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
+        slowRetryJob?.cancel()
         bundle?.player?.let {
             it.removeListener(playerListener)
             it.removeAnalyticsListener(analyticsListener)
@@ -172,6 +176,7 @@ class FluxPlayerController(
     private fun onNetworkRestored() {
         val phase = _status.value.phase
         if (currentChannel != null && (phase == PlaybackPhase.RECOVERING || phase == PlaybackPhase.FAILED)) {
+            slowRetryJob?.cancel()
             recovery.reset()
             updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
             reprepareCurrent("network restored")
@@ -193,6 +198,7 @@ class FluxPlayerController(
         if (!recovery.canRetry()) {
             updateStatus(PlaybackPhase.FAILED, message, prompt = true)
             logEvent("error", "Recovery exhausted for ${currentChannel?.name}: $reason")
+            startSlowAutoRecovery()
             return
         }
         val delayMs = recovery.nextDelayMs()
@@ -201,6 +207,27 @@ class FluxPlayerController(
         retryJob = scope.launch {
             delay(delayMs)
             reprepareCurrent(reason)
+        }
+    }
+
+    /**
+     * After bounded recovery is exhausted, keep trying slowly in the background so the TV heals
+     * itself once the network returns, without the Viewer pressing anything (REQ-BUF-006,
+     * REQ-REC-003). A 30s heartbeat is deliberately not a tight retry loop (REQ-REC-007).
+     */
+    private fun startSlowAutoRecovery() {
+        if (slowRetryJob?.isActive == true) return
+        slowRetryJob = scope.launch {
+            while (true) {
+                delay(30_000)
+                val channel = currentChannel ?: break
+                if (networkMonitor.hasNetwork()) {
+                    logEvent("recovery", "Background auto-retry after outage for ${channel.name}")
+                    recovery.reset()
+                    reprepareCurrent("auto-retry after outage")
+                    break
+                }
+            }
         }
     }
 
@@ -282,6 +309,7 @@ class FluxPlayerController(
 
                 Player.STATE_READY -> {
                     bufferingWatchdog?.cancel()
+                    slowRetryJob?.cancel()
                     if (prepareStartMs > 0L) {
                         val startup = SystemClock.elapsedRealtime() - prepareStartMs
                         prepareStartMs = 0L
