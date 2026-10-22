@@ -45,6 +45,7 @@ import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -280,6 +281,13 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
     var reachability by remember { mutableStateOf<String?>(null) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // Buffer, bandwidth and dropped frames otherwise only refresh on playback state changes.
+    LaunchedEffect(Unit) {
+        while (true) {
+            vm.refreshDiagnostics()
+            delay(1_000)
+        }
+    }
     val d = state.diagnostics
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

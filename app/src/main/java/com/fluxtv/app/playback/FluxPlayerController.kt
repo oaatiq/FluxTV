@@ -49,7 +49,7 @@ class FluxPlayerController(
     private var maxVideoHeight = 0
 
     private val recovery = RecoveryPolicy()
-    private var playingSinceMs = 0L
+    private var lastLiveRejoinMs = -LIVE_REJOIN_MIN_GAP_MS
     private var prepareStartMs = 0L
     private var bufferingEvents = 0
     private var recoveryCount = 0
@@ -59,6 +59,7 @@ class FluxPlayerController(
     private var retryJob: Job? = null
     private var bufferingWatchdog: Job? = null
     private var slowRetryJob: Job? = null
+    private var stabilityJob: Job? = null
 
     private val _status = MutableStateFlow(PlaybackStatus())
     val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
@@ -106,7 +107,7 @@ class FluxPlayerController(
         recovery.reset()
         bufferingEvents = 0
         droppedFramesTotal = 0
-        playingSinceMs = 0L
+        stabilityJob?.cancel()
         prepareStartMs = SystemClock.elapsedRealtime()
 
         val factory = bundle!!.httpDataSourceFactory
@@ -249,6 +250,39 @@ class FluxPlayerController(
         }
     }
 
+    /**
+     * A stall that recovered must not count against the next one: once playback has run without
+     * interruption for a while the retry budget is restored (any stall or error cancels the timer),
+     * so a long session never ends on the failure prompt after a series of recovered stalls.
+     */
+    private fun startStabilityTimer() {
+        stabilityJob?.cancel()
+        stabilityJob = scope.launch {
+            delay(STABLE_PLAYBACK_MS)
+            if (recovery.attempt > 0) {
+                recovery.reset()
+                updateStatus(_status.value.phase, _status.value.userMessage, _status.value.showRecoveryPrompt)
+                logEvent("recovery", "Playback stable for ${STABLE_PLAYBACK_MS / 1000} s: recovery budget restored")
+            }
+        }
+    }
+
+    /**
+     * A live stream the player fell behind (the TV was busy, or playback stalled for a long time) is
+     * not a failure: jump back to the live edge. It shows no message and uses no retry budget. If it
+     * happens again straight away it is treated as a normal error instead, so this can never loop.
+     */
+    private fun rejoinLive(): Boolean {
+        val p = bundle?.player ?: return false
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastLiveRejoinMs < LIVE_REJOIN_MIN_GAP_MS) return false
+        lastLiveRejoinMs = now
+        logEvent("recovery", "Fell behind the live stream; rejoining the live edge")
+        p.seekToDefaultPosition()
+        p.prepare()
+        return true
+    }
+
     private fun updateStatus(
         phase: PlaybackPhase,
         message: String?,
@@ -269,7 +303,8 @@ class FluxPlayerController(
         scope.launch(Dispatchers.IO) { _events.value = diagnosticsStore.append(event) }
     }
 
-    private fun refreshDiagnostics() {
+    /** Re-reads the live figures (buffer, bandwidth, state); the Diagnostics page calls this once a second. */
+    fun refreshDiagnostics() {
         val p = bundle?.player ?: return
         _diagnostics.value = _diagnostics.value.copy(
             channelName = currentChannel?.name,
@@ -306,6 +341,7 @@ class FluxPlayerController(
             when (playbackState) {
                 Player.STATE_BUFFERING -> {
                     bufferingEvents++
+                    stabilityJob?.cancel()
                     startBufferingWatchdog()
                     if (_status.value.phase == PlaybackPhase.PLAYING) {
                         // Short transient disturbances don't get an intrusive message (REQ-BUF-003).
@@ -327,7 +363,7 @@ class FluxPlayerController(
                         BootTrace.awaitingFirstPlay = false
                         logEvent("boot", BootTrace.stamp("Picture playing"))
                     }
-                    playingSinceMs = SystemClock.elapsedRealtime()
+                    startStabilityTimer()
                     updateStatus(PlaybackPhase.PLAYING, message = null, prompt = false)
                 }
 
@@ -341,12 +377,9 @@ class FluxPlayerController(
 
         override fun onPlayerError(error: PlaybackException) {
             bufferingWatchdog?.cancel()
+            stabilityJob?.cancel()
+            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && rejoinLive()) return
             val hasNetwork = networkMonitor.hasNetwork()
-            // A fresh budget is granted only if the channel had been playing stably for a while.
-            if (playingSinceMs > 0L && SystemClock.elapsedRealtime() - playingSinceMs > 20_000L) {
-                recovery.reset()
-            }
-            playingSinceMs = 0L
             val mapped = ErrorMapper.map(error, hasNetwork)
             logEvent("error", mapped.technical)
             if (mapped.recoverable) {
@@ -427,5 +460,13 @@ class FluxPlayerController(
                 logEvent("decoder", "Video decoder: $decoderName (${if (hardware) "hardware" else "software"})")
             }
         }
+    }
+
+    private companion object {
+        /** Uninterrupted playback after which the retry budget is restored. */
+        const val STABLE_PLAYBACK_MS = 20_000L
+
+        /** Minimum gap between silent live-edge rejoins before an error is treated as a real one. */
+        const val LIVE_REJOIN_MIN_GAP_MS = 10_000L
     }
 }

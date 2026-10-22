@@ -366,6 +366,8 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setStartOnBoot(value) }
     }
 
+    fun refreshDiagnostics() = container.playerController.refreshDiagnostics()
+
     fun clearDiagnostics() {
         viewModelScope.launch(Dispatchers.IO) { container.playerController.clearDiagnostics() }
     }
