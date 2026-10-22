@@ -39,12 +39,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Starts FluxTV into live TV after the TV boots (preference-controlled). -->
+        <!--
+            Starts FluxTV into live TV after the TV boots (preference-controlled). Android hands
+            BOOT_COMPLETED to every app one after another, so FluxTV asks for the highest allowed
+            priority to be near the front of the queue (measured on the MiTV: about 25 s earlier).
+        -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>

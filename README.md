@@ -72,8 +72,19 @@ opening themselves in the background, so there it needs the system's "Display ov
 permission; Android 9 (e.g. the MiTV) needs nothing extra.
 
 To see how long it took, open **Settings → Diagnostics → History**: after a boot-start there are three
-`[boot]` lines (boot completed, FluxTV on screen, picture playing), each with the seconds since the
-TV powered on, so the gaps between them are the start-up delay.
+`[boot]` lines (boot signal, FluxTV on screen, picture playing), each with the seconds since the TV
+powered on, so the gaps between them are the start-up delay. The first line also says where the
+start-up time went (process start, app init, setting read).
+
+**Start-up speed.** Android gives the boot signal to every app in turn, so FluxTV's receiver asks for
+the highest allowed priority. On the MiTV that moved the launch from 82–88 s to 54–61 s after power-on
+(picture playing at 64–70 s instead of 91–104 s). A sideloaded APK is otherwise run uncompiled
+(`status=run-from-apk`), which makes the first seconds after boot slower; after each `adb install`
+you can compile it on the TV (saved about 5 s of process start-up there):
+
+```bash
+adb shell cmd package compile -m speed -f com.fluxtv.app
+```
 
 ## Remote control
 
