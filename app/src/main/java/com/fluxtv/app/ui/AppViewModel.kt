@@ -33,10 +33,12 @@ import java.util.concurrent.TimeUnit
 
 enum class AppMode { STARTING, EASY, ADMIN }
 enum class EasyOverlay { NONE, CHANNEL_LIST, NUMBER_ENTRY }
-/** CATEGORIES is the index of every category; the others list channels. */
-enum class ListTab { CATEGORIES, CATEGORY, ALL, FAVORITES }
+/** Which column of the two-pane channel list has the D-pad focus. */
+enum class BrowsePane { CATEGORIES, CHANNELS }
 
-data class CategoryInfo(val name: String, val count: Int)
+/** Keys of the two built-in entries at the top of the category column; real categories use their own name. */
+const val BROWSE_FAVORITES = "\u0000favorites"
+const val BROWSE_ALL = "\u0000all"
 
 data class UiState(
     val mode: AppMode = AppMode.STARTING,
@@ -49,9 +51,7 @@ data class UiState(
     val showInfoBanner: Boolean = false,
     val numberEntry: String = "",
     val transientMessage: String? = null,
-    val channelListTab: ListTab = ListTab.ALL,
-    /** Category picked in the Categories view; null means the one being watched. */
-    val selectedGroup: String? = null,
+    val browsePane: BrowsePane = BrowsePane.CHANNELS,
     val settings: FluxSettings = FluxSettings(),
     val startupMessage: String = "Starting television…",
     val diagnostics: DiagnosticsSnapshot = DiagnosticsSnapshot(),
@@ -64,35 +64,21 @@ data class UiState(
     val lineup: List<Channel>
         get() = if (favoritesOnly) channels.filter { it.stableId in favorites } else channels
 
-    val favoriteChannels: List<Channel>
-        get() = channels.filter { it.stableId in favorites }
-
     /** Category (playlist group) of the channel being watched, if it has one. */
     val currentGroup: String?
         get() = currentChannel?.group?.takeIf { it.isNotBlank() }
 
-    /** Category shown in the list's category tab: the picked one, else the one being watched. */
-    val categoryName: String?
-        get() = selectedGroup ?: currentGroup
-
-    val categoryChannels: List<Channel>
-        get() = categoryName?.let { group -> channels.filter { it.group == group } } ?: emptyList()
-
-    /** Every category with its channel count, in playlist order. */
-    val categories: List<CategoryInfo>
-        get() = channels
-            .mapNotNull { it.group?.takeIf { group -> group.isNotBlank() } }
-            .groupingBy { it }
-            .eachCount()
-            .map { (name, count) -> CategoryInfo(name, count) }
+    /** Category the channel list opens on: Favorites in favorites-only mode, else the watched channel's. */
+    val browseStartKey: String
+        get() = if (favoritesOnly) BROWSE_FAVORITES else currentGroup ?: BROWSE_ALL
 }
 
 /**
  * Single source of UI truth and the Easy Mode state machine (§25).
  *
- * STARTING -> restore last channel -> WATCHING; OK opens the CHANNEL LIST and Back opens it on the
- * current channel's category; recovery returns to WATCHING. Everything the Viewer can do routes through here so each remote button maps to one
- * consistent action (REQ-REM-001/002).
+ * STARTING -> restore last channel -> WATCHING; OK or Back opens the two-pane CHANNEL LIST on the
+ * current channel's category; recovery returns to WATCHING. Everything the Viewer can do routes
+ * through here so each remote button maps to one consistent action (REQ-REM-001/002).
  */
 class AppViewModel(
     application: Application,
@@ -229,36 +215,18 @@ class AppViewModel(
 
     // ---------- overlays ----------
 
+    /** OK or Back while watching: the two-pane list, on the watched channel's category, focus on its channels. */
     fun openChannelList() {
         if (_state.value.channels.isEmpty()) return
-        val tab = if (_state.value.favoritesOnly) ListTab.FAVORITES else ListTab.ALL
-        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = tab, selectedGroup = null) }
+        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, browsePane = BrowsePane.CHANNELS) }
     }
 
-    /** Back while watching: the first step back, the list scoped to the channel being watched's category. */
-    fun openCategoryList() {
-        val state = _state.value
-        if (state.channels.isEmpty()) return
-        if (state.currentGroup == null) {
-            openChannelList()
-            return
-        }
-        _state.update {
-            it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = ListTab.CATEGORY, selectedGroup = null)
-        }
-    }
-
-    /** Picked from the Categories view: show that category's channels. */
-    fun selectCategory(name: String) {
-        _state.update { it.copy(selectedGroup = name, channelListTab = ListTab.CATEGORY) }
-    }
+    fun setBrowsePane(pane: BrowsePane) = _state.update { it.copy(browsePane = pane) }
 
     fun closeOverlay() {
         numberJob?.cancel()
         _state.update { it.copy(overlay = EasyOverlay.NONE, numberEntry = "") }
     }
-
-    fun setTab(tab: ListTab) = _state.update { it.copy(channelListTab = tab) }
 
     // ---------- number entry (REQ-REM-005) ----------
 

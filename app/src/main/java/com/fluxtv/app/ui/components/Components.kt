@@ -36,6 +36,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -212,7 +213,8 @@ fun ChannelRow(
     isFavorite: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    numberWidth: Dp = 64.dp
 ) {
     var focused by remember { mutableStateOf(false) }
     val textColor = if (focused) OnAccent else FluxOnSurface
@@ -234,7 +236,7 @@ fun ChannelRow(
     ) {
         BasicText(
             number.toString(),
-            modifier = Modifier.width(64.dp),
+            modifier = Modifier.width(numberWidth),
             style = TextStyle(color = textColor, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         )
         if (!logoUrl.isNullOrBlank()) {
@@ -266,12 +268,12 @@ fun ChannelRow(
     }
 }
 
-/** One category in the Categories view: its name, how many channels it holds, and a "watching" mark. */
+/** One category in the channel list's left column: its name and channel count; [selected] marks the one shown. */
 @Composable
 fun CategoryRow(
     name: String,
     count: Int,
-    isWatching: Boolean,
+    selected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -286,11 +288,11 @@ fun CategoryRow(
             .background(
                 when {
                     focused -> FluxAccent
-                    isWatching -> FluxSurfaceVariant
+                    selected -> FluxSurfaceVariant
                     else -> Color.Transparent
                 }
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BasicText(
@@ -298,19 +300,16 @@ fun CategoryRow(
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = TextStyle(color = textColor, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-        )
-        if (isWatching) {
-            Spacer(Modifier.width(12.dp))
-            BasicText(
-                "WATCHING",
-                style = TextStyle(color = if (focused) OnAccent else FluxAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            style = TextStyle(
+                color = textColor,
+                fontSize = 20.sp,
+                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Normal
             )
-        }
-        Spacer(Modifier.width(16.dp))
+        )
+        Spacer(Modifier.width(10.dp))
         BasicText(
             count.toString(),
-            style = TextStyle(color = if (focused) OnAccent else FluxMuted, fontSize = 22.sp)
+            style = TextStyle(color = if (focused) OnAccent else FluxMuted, fontSize = 17.sp)
         )
     }
 }

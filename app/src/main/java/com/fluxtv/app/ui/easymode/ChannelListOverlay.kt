@@ -6,7 +6,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,19 +13,24 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -37,11 +41,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fluxtv.app.data.model.Channel
-import com.fluxtv.app.ui.CategoryInfo
-import com.fluxtv.app.ui.ListTab
+import com.fluxtv.app.ui.BROWSE_ALL
+import com.fluxtv.app.ui.BROWSE_FAVORITES
+import com.fluxtv.app.ui.BrowsePane
 import com.fluxtv.app.ui.components.CategoryRow
 import com.fluxtv.app.ui.components.ChannelRow
-import com.fluxtv.app.ui.components.FluxChip
 import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxMuted
@@ -76,69 +80,103 @@ private object InstantBringIntoViewSpec : BringIntoViewSpec {
     }
 }
 
+private class CategoryEntry(val key: String, val name: String, val count: Int)
+
+/** How long the D-pad rests on a category before its channels replace the ones on the right. */
+private const val PREVIEW_DELAY_MS = 140L
+
 /**
- * Deliberately simple channel list (§8). A left panel keeps the picture visible behind it so
- * opening the list does not interrupt viewing (REQ-CH-003). The current channel is scrolled to and
- * focused. ◀ ▶ move across Categories (every category), the current category (when it has one),
- * All and Favorites; picking a category in the Categories view shows its channels.
+ * Two-pane channel list (§8): categories on the left, the channels of the highlighted category on the
+ * right, both visible at once. A left panel keeps the picture visible behind it so opening the list
+ * does not interrupt viewing (REQ-CH-003). It opens on the watched channel's category with the focus on
+ * that channel. ◀ (or Back) moves to the categories; moving through them previews each category's
+ * channels once the focus rests there, and OK or ▶ goes into the channels. Favorites and All channels are
+ * the first two categories.
  */
 @Composable
 fun ChannelListOverlay(
     allChannels: List<Channel>,
-    favoriteChannels: List<Channel>,
-    categoryChannels: List<Channel>,
-    categoryName: String?,
-    categories: List<CategoryInfo>,
     favorites: Set<String>,
     currentId: String?,
-    tab: ListTab,
+    startKey: String,
+    pane: BrowsePane,
+    onPaneChange: (BrowsePane) -> Unit,
     onSelect: (Channel) -> Unit,
-    onSelectCategory: (String) -> Unit,
-    onToggleFavorite: (Channel) -> Unit,
-    onSwitchTab: (ListTab) -> Unit
+    onToggleFavorite: (Channel) -> Unit
 ) {
-    // Left-to-right order of the views; the category tab only exists when there is a category to show.
-    val tabs = if (categoryName != null) listOf(ListTab.CATEGORY, ListTab.ALL, ListTab.FAVORITES)
-    else listOf(ListTab.ALL, ListTab.FAVORITES)
-    val order = listOf(ListTab.CATEGORIES) + tabs
-    val inCategories = tab == ListTab.CATEGORIES
-
-    val list = when (tab) {
-        ListTab.CATEGORIES -> emptyList()
-        ListTab.CATEGORY -> categoryChannels
-        ListTab.FAVORITES -> favoriteChannels
-        ListTab.ALL -> allChannels
+    // First-appearance (playlist) order of the real categories.
+    val byGroup = remember(allChannels) {
+        allChannels.filter { !it.group.isNullOrBlank() }.groupBy { it.group!! }
     }
-    val watchingGroup = remember(allChannels, currentId) {
-        allChannels.firstOrNull { it.stableId == currentId }?.group
-    }
-    val listState = rememberLazyListState()
-    val focusRequester = remember { FocusRequester() }
-
-    val focusId = currentId?.takeIf { id -> list.any { it.stableId == id } } ?: list.firstOrNull()?.stableId
-    val itemCount = if (inCategories) categories.size else list.size
-    val focusIndex = if (inCategories) categories.indexOfFirst { it.name == categoryName }
-    else list.indexOfFirst { it.stableId == focusId }
-
-    LaunchedEffect(tab, itemCount) {
-        if (itemCount > 0) {
-            listState.scrollToItem(focusIndex.coerceAtLeast(0))
-            delay(60)
-            runCatching { focusRequester.requestFocus() }
+    val favoriteCount = remember(allChannels, favorites) { allChannels.count { it.stableId in favorites } }
+    val entries = remember(byGroup, allChannels.size, favoriteCount) {
+        buildList {
+            add(CategoryEntry(BROWSE_FAVORITES, "Favorites", favoriteCount))
+            add(CategoryEntry(BROWSE_ALL, "All channels", allChannels.size))
+            byGroup.forEach { (name, list) -> add(CategoryEntry(name, name, list.size)) }
         }
+    }
+
+    val firstKey = if (entries.any { it.key == startKey }) startKey else BROWSE_ALL
+    var shownKey by remember { mutableStateOf(firstKey) }      // category whose channels are listed
+    var focusedKey by remember { mutableStateOf(firstKey) }    // category the D-pad is on
+    val channels = remember(shownKey, allChannels, favorites) {
+        when (shownKey) {
+            BROWSE_ALL -> allChannels
+            BROWSE_FAVORITES -> allChannels.filter { it.stableId in favorites }
+            else -> byGroup[shownKey].orEmpty()
+        }
+    }
+
+    LaunchedEffect(focusedKey) {
+        if (focusedKey != shownKey) {
+            delay(PREVIEW_DELAY_MS)
+            shownKey = focusedKey
+        }
+    }
+
+    // Open on the watched channel; a freshly shown category starts at its top.
+    val focusChannelId = currentId?.takeIf { id -> channels.any { it.stableId == id } } ?: channels.firstOrNull()?.stableId
+    val categoryState = remember { LazyListState(firstVisibleItemIndex = entries.indexOfFirst { it.key == firstKey }.coerceAtLeast(0)) }
+    val channelState = remember(shownKey) {
+        LazyListState(firstVisibleItemIndex = channels.indexOfFirst { it.stableId == focusChannelId }.coerceAtLeast(0))
+    }
+    val categoryFocus = remember { FocusRequester() }
+    val channelFocus = remember { FocusRequester() }
+
+    LaunchedEffect(pane) {
+        if (pane == BrowsePane.CATEGORIES) {
+            categoryState.scrollToItem(entries.indexOfFirst { it.key == shownKey }.coerceAtLeast(0))
+            delay(60)
+            runCatching { categoryFocus.requestFocus() }
+        } else if (channels.isNotEmpty()) {
+            delay(60)
+            runCatching { channelFocus.requestFocus() }
+        }
+    }
+
+    val openCategory = { key: String ->
+        shownKey = key
+        onPaneChange(BrowsePane.CHANNELS)
     }
 
     Row(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(540.dp)
+                .width(700.dp)
                 .background(Color(0xF2080C14))
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
                         when (event.key) {
-                            Key.DirectionLeft -> { order.getOrNull(order.indexOf(tab) - 1)?.let(onSwitchTab); true }
-                            Key.DirectionRight -> { order.getOrNull(order.indexOf(tab) + 1)?.let(onSwitchTab); true }
+                            Key.DirectionLeft -> {
+                                if (pane == BrowsePane.CHANNELS) onPaneChange(BrowsePane.CATEGORIES)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                if (pane == BrowsePane.CATEGORIES) openCategory(focusedKey)
+                                true
+                            }
                             else -> false
                         }
                     } else {
@@ -147,75 +185,61 @@ fun ChannelListOverlay(
                 }
                 .overscan()
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle(if (inCategories) "Categories" else "Channels")
-                Spacer(Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                SectionTitle(entries.firstOrNull { it.key == shownKey }?.name ?: "Channels")
+                Spacer(Modifier.width(16.dp))
                 BasicText(
-                    if (inCategories) "Channels ▶" else "◀ Categories",
+                    "${channels.size} channels",
+                    modifier = Modifier.padding(bottom = 4.dp),
                     style = TextStyle(color = FluxMuted, fontSize = 18.sp)
                 )
             }
             Spacer(Modifier.height(16.dp))
-            if (inCategories) {
-                if (categories.isEmpty()) {
-                    BasicText("No categories.", style = TextStyle(color = FluxMuted, fontSize = 22.sp))
-                } else {
-                    LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-                        itemsIndexed(categories, key = { _, category -> category.name }) { index, category ->
-                            CategoryRow(
-                                name = category.name,
-                                count = category.count,
-                                isWatching = category.name == watchingGroup,
-                                modifier = if (index == focusIndex.coerceAtLeast(0)) Modifier.focusRequester(focusRequester) else Modifier,
-                                onClick = { onSelectCategory(category.name) }
-                            )
-                        }
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(state = categoryState, modifier = Modifier.width(200.dp).fillMaxHeight()) {
+                    itemsIndexed(entries, key = { _, entry -> entry.key }) { _, entry ->
+                        CategoryRow(
+                            name = entry.name,
+                            count = entry.count,
+                            selected = entry.key == shownKey,
+                            modifier = (if (entry.key == shownKey) Modifier.focusRequester(categoryFocus) else Modifier)
+                                .onFocusChanged { if (it.isFocused) focusedKey = entry.key },
+                            onClick = { openCategory(entry.key) }
+                        )
                     }
-                    Spacer(Modifier.height(12.dp))
-                    BasicText(
-                        "OK: open   •   ▶: channels   •   Back: exit",
-                        style = TextStyle(color = FluxMuted, fontSize = 16.sp)
-                    )
                 }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (categoryName != null) {
-                        // Shrinks (with an ellipsis) rather than pushing the other chips off the panel.
-                        FluxChip(categoryName, tab == ListTab.CATEGORY, Modifier.weight(1f, fill = false)) {
-                            onSwitchTab(ListTab.CATEGORY)
-                        }
-                    }
-                    FluxChip("All channels", tab == ListTab.ALL) { onSwitchTab(ListTab.ALL) }
-                    FluxChip("Favorites", tab == ListTab.FAVORITES) { onSwitchTab(ListTab.FAVORITES) }
-                }
-                Spacer(Modifier.height(16.dp))
-                if (list.isEmpty()) {
+                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(2.dp).fillMaxHeight().background(Color(0x1AFFFFFF)))
+                Spacer(Modifier.width(14.dp))
+                if (channels.isEmpty()) {
                     BasicText(
-                        if (tab == ListTab.FAVORITES) "No favorite channels yet." else "No channels.",
-                        style = TextStyle(color = FluxMuted, fontSize = 22.sp)
+                        if (shownKey == BROWSE_FAVORITES) "No favorite channels yet." else "No channels.",
+                        style = TextStyle(color = FluxMuted, fontSize = 20.sp)
                     )
                 } else {
-                    LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-                        itemsIndexed(list, key = { _, channel -> channel.stableId }) { _, channel ->
+                    LazyColumn(state = channelState, modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        itemsIndexed(channels, key = { _, channel -> channel.stableId }) { _, channel ->
                             ChannelRow(
                                 number = channel.number,
                                 name = channel.name,
                                 logoUrl = channel.logoUrl,
                                 isCurrent = channel.stableId == currentId,
                                 isFavorite = channel.stableId in favorites,
-                                modifier = if (channel.stableId == focusId) Modifier.focusRequester(focusRequester) else Modifier,
+                                modifier = if (channel.stableId == focusChannelId) Modifier.focusRequester(channelFocus) else Modifier,
                                 onClick = { onSelect(channel) },
-                                onLongClick = { onToggleFavorite(channel) }
+                                onLongClick = { onToggleFavorite(channel) },
+                                numberWidth = 58.dp
                             )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    BasicText(
-                        "OK: watch   •   Hold OK: favorite   •   ◀ ▶: switch list   •   Back: categories",
-                        style = TextStyle(color = FluxMuted, fontSize = 16.sp)
-                    )
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            BasicText(
+                if (pane == BrowsePane.CHANNELS) "OK: watch   •   Hold OK: favorite   •   ◀ / Back: categories"
+                else "OK / ▶: open   •   Back: exit",
+                style = TextStyle(color = FluxMuted, fontSize = 16.sp)
+            )
         }
     }
 }

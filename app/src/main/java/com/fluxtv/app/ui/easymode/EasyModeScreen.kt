@@ -21,8 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fluxtv.app.ui.AppViewModel
+import com.fluxtv.app.ui.BrowsePane
 import com.fluxtv.app.ui.EasyOverlay
-import com.fluxtv.app.ui.ListTab
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxMuted
@@ -31,8 +31,8 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 /**
  * The WATCHING state (§25). Full-screen video with transient overlays layered above it; playback
  * keeps running underneath the channel list (REQ-CH-003). Back steps back like other IPTV players:
- * watching -> the list on the current channel's category -> Categories -> leave the app. The last
- * channel is remembered, so the next launch resumes it.
+ * watching -> the two-pane list on the current channel's category -> its categories column -> leave
+ * the app. The last channel is remembered, so the next launch resumes it.
  */
 @Composable
 fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
@@ -64,17 +64,13 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
             InstantScroll {
                 ChannelListOverlay(
                     allChannels = state.channels,
-                    favoriteChannels = state.favoriteChannels,
-                    categoryChannels = state.categoryChannels,
-                    categoryName = state.categoryName,
-                    categories = if (state.channelListTab == ListTab.CATEGORIES) state.categories else emptyList(),
                     favorites = state.favorites,
                     currentId = state.currentChannel?.stableId,
-                    tab = state.channelListTab,
+                    startKey = state.browseStartKey,
+                    pane = state.browsePane,
+                    onPaneChange = vm::setBrowsePane,
                     onSelect = vm::selectChannel,
-                    onSelectCategory = vm::selectCategory,
-                    onToggleFavorite = vm::toggleFavorite,
-                    onSwitchTab = vm::setTab
+                    onToggleFavorite = vm::toggleFavorite
                 )
             }
         }
@@ -88,12 +84,12 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
 
     BackHandler(enabled = true) {
         when {
-            // A channel list steps up to Categories; Categories leaves the app.
-            state.overlay == EasyOverlay.CHANNEL_LIST && state.channelListTab != ListTab.CATEGORIES ->
-                vm.setTab(ListTab.CATEGORIES)
+            // The channels step up to the categories; the categories leave the app.
+            state.overlay == EasyOverlay.CHANNEL_LIST && state.browsePane == BrowsePane.CHANNELS ->
+                vm.setBrowsePane(BrowsePane.CATEGORIES)
             state.overlay == EasyOverlay.CHANNEL_LIST -> onExit()
             state.overlay != EasyOverlay.NONE -> vm.closeOverlay()
-            else -> vm.openCategoryList()
+            else -> vm.openChannelList()
         }
     }
 }

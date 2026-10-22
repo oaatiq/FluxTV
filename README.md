@@ -104,18 +104,23 @@ adb shell cmd package compile -m speed -f com.fluxtv.app
 |---|---|---|
 | **▲ / Channel +** | Next channel | — |
 | **▼ / Channel −** | Previous channel | — |
-| **◀ ▶** | — | Switch Categories ⇄ current category ⇄ All ⇄ Favorites. **Categories** lists every category; **OK** on one shows its channels |
-| **OK** | Open the channel list | Watch the highlighted channel |
+| **◀ ▶** | — | **◀** moves from the channels to the categories, **▶** goes back into the channels |
+| **▲ ▼** | — | Move through the channels, or through the categories (the channels on the right follow) |
+| **OK** | Open the channel list | Watch the highlighted channel; on a category, open its channels |
 | **Hold OK (2s)** | Open **Settings** | — |
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |
-| **Back** | Show the channels in the current channel's category (e.g. Maroc) | Step up: channels → Categories → leave FluxTV |
+| **Back** | Show the channel list (the current channel's category, e.g. Maroc) | Step up: channels → categories → leave FluxTV |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
 
-Back steps back like other IPTV players: watching → the channel list → Categories → leave FluxTV. The
-last channel is remembered, so the next launch resumes it. Choosing the channel that is already playing
-just closes the list. **Home** also leaves (the app stays in the background), and **Settings** (hold OK,
+The channel list has two columns: **categories** on the left (Favorites and All channels first, then the
+playlist's own groups with their channel counts) and the **channels** of the highlighted category on the
+right. It opens on the category of the channel you are watching, with that channel selected.
+
+Back steps back like other IPTV players: watching → the channel list → the categories column → leave
+FluxTV. The last channel is remembered, so the next launch resumes it. Choosing the channel that is
+already playing just closes the list. **Home** also leaves (the app stays in the background), and **Settings** (hold OK,
 or MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
 
 ## Administrator / Settings
