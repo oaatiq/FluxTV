@@ -114,6 +114,7 @@ class FluxPlayerController(
         channel.referer?.let { headers["Referer"] = it }
         factory.setDefaultRequestProperties(headers)
 
+        bundle!!.channelSwitch.pending = true
         p.setMediaItem(MediaItem.fromUri(channel.url))
         p.prepare()
         p.playWhenReady = true
@@ -308,6 +309,7 @@ class FluxPlayerController(
                 }
 
                 Player.STATE_READY -> {
+                    bundle?.channelSwitch?.pending = false
                     bufferingWatchdog?.cancel()
                     slowRetryJob?.cancel()
                     if (prepareStartMs > 0L) {
