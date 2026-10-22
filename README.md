@@ -108,14 +108,15 @@ adb shell cmd package compile -m speed -f com.fluxtv.app
 | **OK** | Open the channel list | Watch the highlighted channel |
 | **Hold OK (2s)** | Open **Settings** | — |
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |
-| **Back** | Show the channels in the current channel's category (e.g. Maroc) | Close the list |
+| **Back** | Show the channels in the current channel's category (e.g. Maroc) | Step up: channels → Categories → leave FluxTV |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
 
-Back never exits the app accidentally. To leave, press **Home** (the app stays in the background), or to
-close it completely open **Settings** (hold OK, or MENU) and choose **Exit FluxTV**. Accidental
-repeated presses are debounced to one action per press.
+Back steps back like other IPTV players: watching → the channel list → Categories → leave FluxTV. The
+last channel is remembered, so the next launch resumes it. Choosing the channel that is already playing
+just closes the list. **Home** also leaves (the app stays in the background), and **Settings** (hold OK,
+or MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
 
 ## Administrator / Settings
 

@@ -13,6 +13,7 @@ import com.fluxtv.app.data.model.DiagnosticsSnapshot
 import com.fluxtv.app.data.repository.RefreshOutcome
 import com.fluxtv.app.data.settings.FluxSettings
 import com.fluxtv.app.playback.FluxPlayerController
+import com.fluxtv.app.playback.PlaybackPhase
 import com.fluxtv.app.playback.PlaybackStatus
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.Dispatchers
@@ -207,6 +208,13 @@ class AppViewModel(
         }
     }
 
+    /** Picked in the channel list: the channel already on screen just closes the list instead of restarting. */
+    fun selectChannel(channel: Channel) {
+        val phase = _state.value.playback.phase
+        val showing = phase == PlaybackPhase.PLAYING || phase == PlaybackPhase.BUFFERING || phase == PlaybackPhase.PREPARING
+        if (channel.stableId == currentChannelId && showing) closeOverlay() else tuneTo(channel)
+    }
+
     fun channelUp() = step(1)
     fun channelDown() = step(-1)
 
@@ -227,7 +235,7 @@ class AppViewModel(
         _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = tab, selectedGroup = null) }
     }
 
-    /** Back while watching: the list, scoped to the category of the channel being watched. */
+    /** Back while watching: the first step back, the list scoped to the channel being watched's category. */
     fun openCategoryList() {
         val state = _state.value
         if (state.channels.isEmpty()) return

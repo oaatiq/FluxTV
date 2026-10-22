@@ -30,11 +30,12 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 
 /**
  * The WATCHING state (§25). Full-screen video with transient overlays layered above it; playback
- * keeps running underneath the channel list (REQ-CH-003). Back closes an overlay, or opens the list
- * on the current channel's category — it never accidentally exits the app (REQ-CFG-001, REQ-REM-003).
+ * keeps running underneath the channel list (REQ-CH-003). Back steps back like other IPTV players:
+ * watching -> the list on the current channel's category -> Categories -> leave the app. The last
+ * channel is remembered, so the next launch resumes it.
  */
 @Composable
-fun EasyModeScreen(state: UiState, vm: AppViewModel) {
+fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     val playerReady by vm.controller.playerReady.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -70,7 +71,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
                     favorites = state.favorites,
                     currentId = state.currentChannel?.stableId,
                     tab = state.channelListTab,
-                    onSelect = vm::tuneTo,
+                    onSelect = vm::selectChannel,
                     onSelectCategory = vm::selectCategory,
                     onToggleFavorite = vm::toggleFavorite,
                     onSwitchTab = vm::setTab
@@ -86,7 +87,14 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
     }
 
     BackHandler(enabled = true) {
-        if (state.overlay != EasyOverlay.NONE) vm.closeOverlay() else vm.openCategoryList()
+        when {
+            // A channel list steps up to Categories; Categories leaves the app.
+            state.overlay == EasyOverlay.CHANNEL_LIST && state.channelListTab != ListTab.CATEGORIES ->
+                vm.setTab(ListTab.CATEGORIES)
+            state.overlay == EasyOverlay.CHANNEL_LIST -> onExit()
+            state.overlay != EasyOverlay.NONE -> vm.closeOverlay()
+            else -> vm.openCategoryList()
+        }
     }
 }
 

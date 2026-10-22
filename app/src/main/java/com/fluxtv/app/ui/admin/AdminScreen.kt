@@ -56,7 +56,7 @@ private enum class AdminSection { MENU, PLAYLIST, CHANNELS, PREFERENCES, DIAGNOS
 /**
  * Administrator area, fully separated from Easy Mode (REQ-GEN-003, REQ-CFG-003) and optionally
  * protected by a PIN (REQ-CFG-004). Reached only by a deliberate gesture (hold OK / MENU). It also
- * holds "Exit FluxTV", the only in-app way to close the app (Back never exits; Home always leaves).
+ * holds "Exit FluxTV" (Back from the Categories view and Home also leave the app).
  */
 @Composable
 fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {

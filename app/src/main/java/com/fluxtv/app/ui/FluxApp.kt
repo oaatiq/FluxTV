@@ -21,7 +21,7 @@ fun FluxApp(vm: AppViewModel, onExit: () -> Unit) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             when (state.mode) {
                 AppMode.STARTING -> StartingScreen(state.startupMessage)
-                AppMode.EASY -> EasyModeScreen(state, vm)
+                AppMode.EASY -> EasyModeScreen(state, vm, onExit)
                 AppMode.ADMIN -> AdminScreen(state, vm, onExit)
             }
         }

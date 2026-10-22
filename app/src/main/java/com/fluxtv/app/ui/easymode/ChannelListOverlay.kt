@@ -173,7 +173,7 @@ fun ChannelListOverlay(
                     }
                     Spacer(Modifier.height(12.dp))
                     BasicText(
-                        "OK: open   •   ▶: channels   •   Back: close",
+                        "OK: open   •   ▶: channels   •   Back: exit",
                         style = TextStyle(color = FluxMuted, fontSize = 16.sp)
                     )
                 }
@@ -211,7 +211,7 @@ fun ChannelListOverlay(
                     }
                     Spacer(Modifier.height(12.dp))
                     BasicText(
-                        "OK: watch   •   Hold OK: favorite   •   ◀ ▶: switch list   •   Back: close",
+                        "OK: watch   •   Hold OK: favorite   •   ◀ ▶: switch list   •   Back: categories",
                         style = TextStyle(color = FluxMuted, fontSize = 16.sp)
                     )
                 }
