@@ -1,6 +1,11 @@
 package com.fluxtv.app.ui.easymode
 
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +20,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -40,6 +46,35 @@ import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxMuted
 import kotlinx.coroutines.delay
+import kotlin.math.abs
+
+/**
+ * Makes the lists inside [content] jump straight to the focused row instead of Compose's default
+ * spring animation. D-pad scrolling is a series of one-row steps, and on the MiTV the animation trails
+ * behind the focus and costs extra frames, so the list feels sluggish; moving instantly feels snappy.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun InstantScroll(content: @Composable () -> Unit) {
+    CompositionLocalProvider(LocalBringIntoViewSpec provides InstantBringIntoViewSpec, content = content)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private object InstantBringIntoViewSpec : BringIntoViewSpec {
+    override val scrollAnimationSpec: AnimationSpec<Float> = snap()
+
+    // Same distance as the default (bring the row just into view); only the animation is dropped.
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val leading = offset
+        val trailing = offset + size
+        return when {
+            leading >= 0 && trailing <= containerSize -> 0f
+            leading < 0 && trailing > containerSize -> 0f
+            abs(leading) < abs(trailing - containerSize) -> leading
+            else -> trailing - containerSize
+        }
+    }
+}
 
 /**
  * Deliberately simple channel list (§8). A left panel keeps the picture visible behind it so

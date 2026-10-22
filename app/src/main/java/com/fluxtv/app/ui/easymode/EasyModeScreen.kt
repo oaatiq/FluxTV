@@ -60,20 +60,22 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
         }
 
         if (state.overlay == EasyOverlay.CHANNEL_LIST) {
-            ChannelListOverlay(
-                allChannels = state.channels,
-                favoriteChannels = state.favoriteChannels,
-                categoryChannels = state.categoryChannels,
-                categoryName = state.categoryName,
-                categories = if (state.channelListTab == ListTab.CATEGORIES) state.categories else emptyList(),
-                favorites = state.favorites,
-                currentId = state.currentChannel?.stableId,
-                tab = state.channelListTab,
-                onSelect = vm::tuneTo,
-                onSelectCategory = vm::selectCategory,
-                onToggleFavorite = vm::toggleFavorite,
-                onSwitchTab = vm::setTab
-            )
+            InstantScroll {
+                ChannelListOverlay(
+                    allChannels = state.channels,
+                    favoriteChannels = state.favoriteChannels,
+                    categoryChannels = state.categoryChannels,
+                    categoryName = state.categoryName,
+                    categories = if (state.channelListTab == ListTab.CATEGORIES) state.categories else emptyList(),
+                    favorites = state.favorites,
+                    currentId = state.currentChannel?.stableId,
+                    tab = state.channelListTab,
+                    onSelect = vm::tuneTo,
+                    onSelectCategory = vm::selectCategory,
+                    onToggleFavorite = vm::toggleFavorite,
+                    onSwitchTab = vm::setTab
+                )
+            }
         }
 
         if (state.overlay == EasyOverlay.NUMBER_ENTRY) {

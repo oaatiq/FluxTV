@@ -43,11 +43,22 @@ JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot" ./gradlew 
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
+For day-to-day use on the TV build the **release** variant instead. It is much smoother (on the MiTV,
+about 40% less frame time when scrolling the channel list) and Android compiles it ahead of time when
+it is installed:
+
+```bash
+./gradlew :app:assembleRelease   # app/build/outputs/apk/release/app-release.apk
+```
+
+The release build is signed with the debug key (see `app/build.gradle.kts`), so it updates an existing
+debug install in place and keeps your settings. It is not debuggable, so `adb shell run-as` won't work on it.
+
 ### Install on an Android TV box
 
 ```bash
 adb connect <tv-ip>:5555        # or plug in over USB
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 FluxTV then appears in the Android TV launcher's apps row (it registers a `LEANBACK_LAUNCHER`
@@ -78,9 +89,10 @@ start-up time went (process start, app init, setting read).
 
 **Start-up speed.** Android gives the boot signal to every app in turn, so FluxTV's receiver asks for
 the highest allowed priority. On the MiTV that moved the launch from 82–88 s to 54–61 s after power-on
-(picture playing at 64–70 s instead of 91–104 s). A sideloaded APK is otherwise run uncompiled
-(`status=run-from-apk`), which makes the first seconds after boot slower; after each `adb install`
-you can compile it on the TV (saved about 5 s of process start-up there):
+(picture playing at 64–70 s instead of 91–104 s). A sideloaded *debug* APK is otherwise run uncompiled
+(`status=run-from-apk`), which makes the first seconds after boot slower; after each `adb install` of a
+debug build you can compile it on the TV (saved about 5 s of process start-up there). A release build
+is compiled when it is installed, so it doesn't need this:
 
 ```bash
 adb shell cmd package compile -m speed -f com.fluxtv.app

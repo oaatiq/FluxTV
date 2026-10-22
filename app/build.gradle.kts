@@ -22,6 +22,11 @@ android {
             isMinifyEnabled = false
         }
         release {
+            // Sideloaded personal build: signed with the debug key so `assembleRelease` produces an APK
+            // that updates an existing debug install in place (keeps settings). Release is about 40%
+            // faster to draw than debug on the MiTV and is compiled ahead of time when installed.
+            // Use a real keystore here before publishing anywhere.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
