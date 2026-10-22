@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
 
 enum class AppMode { STARTING, EASY, ADMIN }
 enum class EasyOverlay { NONE, CHANNEL_LIST, NUMBER_ENTRY }
-enum class ListTab { ALL, FAVORITES }
+enum class ListTab { CATEGORY, ALL, FAVORITES }
 
 data class UiState(
     val mode: AppMode = AppMode.STARTING,
@@ -60,13 +60,21 @@ data class UiState(
 
     val favoriteChannels: List<Channel>
         get() = channels.filter { it.stableId in favorites }
+
+    /** Category (playlist group) of the channel being watched, if it has one. */
+    val currentGroup: String?
+        get() = currentChannel?.group?.takeIf { it.isNotBlank() }
+
+    /** Every channel in the same category as the one being watched. */
+    val categoryChannels: List<Channel>
+        get() = currentGroup?.let { group -> channels.filter { it.group == group } } ?: emptyList()
 }
 
 /**
  * Single source of UI truth and the Easy Mode state machine (§25).
  *
- * STARTING -> restore last channel -> WATCHING; OK opens the CHANNEL LIST; recovery returns to
- * WATCHING. Everything the Viewer can do routes through here so each remote button maps to one
+ * STARTING -> restore last channel -> WATCHING; OK opens the CHANNEL LIST and Back opens it on the
+ * current channel's category; recovery returns to WATCHING. Everything the Viewer can do routes through here so each remote button maps to one
  * consistent action (REQ-REM-001/002).
  */
 class AppViewModel(
@@ -82,7 +90,6 @@ class AppViewModel(
     private var bannerJob: Job? = null
     private var numberJob: Job? = null
     private var transientJob: Job? = null
-    private var previousChannelId: String? = null
     private var currentChannelId: String? = null
     private var started = false
 
@@ -151,8 +158,6 @@ class AppViewModel(
             _state.update { it.copy(mode = AppMode.EASY) }
             if (lineup.isNotEmpty()) {
                 val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
-                // Restore the channel watched before this one so Back works right after launch.
-                previousChannelId = s.previousChannelStableId?.takeIf { it != target.stableId }
                 tuneTo(target)
             }
 
@@ -166,9 +171,6 @@ class AppViewModel(
     // ---------- tuning ----------
 
     fun tuneTo(channel: Channel) {
-        if (currentChannelId != null && currentChannelId != channel.stableId) {
-            previousChannelId = currentChannelId
-        }
         currentChannelId = channel.stableId
         numberJob?.cancel()
         _state.update {
@@ -181,8 +183,7 @@ class AppViewModel(
             )
         }
         container.playerController.playChannel(channel)
-        val previous = previousChannelId
-        viewModelScope.launch { container.settingsRepository.setLastChannel(channel.stableId, previous) }
+        viewModelScope.launch { container.settingsRepository.setLastChannel(channel.stableId) }
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {
             delay(4500)
@@ -202,22 +203,23 @@ class AppViewModel(
         tuneTo(next)
     }
 
-    fun recallPrevious() {
-        val channel = previousChannelId?.let { prev -> _state.value.channels.firstOrNull { it.stableId == prev } }
-        if (channel == null) {
-            // Never leave Back looking dead (REQ-PERF-001).
-            showTransient("No previous channel")
-            return
-        }
-        tuneTo(channel)
-    }
-
     // ---------- overlays ----------
 
     fun openChannelList() {
         if (_state.value.channels.isEmpty()) return
         val tab = if (_state.value.favoritesOnly) ListTab.FAVORITES else ListTab.ALL
         _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = tab) }
+    }
+
+    /** Back while watching: the list, scoped to the category of the channel being watched. */
+    fun openCategoryList() {
+        val state = _state.value
+        if (state.channels.isEmpty()) return
+        if (state.currentGroup == null) {
+            openChannelList()
+            return
+        }
+        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = ListTab.CATEGORY) }
     }
 
     fun closeOverlay() {

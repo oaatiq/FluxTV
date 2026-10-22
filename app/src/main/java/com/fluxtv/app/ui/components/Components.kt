@@ -191,6 +191,8 @@ fun FluxChip(
     ) {
         BasicText(
             text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             style = TextStyle(
                 color = if (selected) OnAccent else FluxOnSurface,
                 fontSize = 20.sp,

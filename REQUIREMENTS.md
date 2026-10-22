@@ -5,7 +5,7 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
-  change channel, channel list, favorites, previous channel.
+  change channel, channel list, favorites, current-category list (Back).
 - **REQ-GEN-003** — admin is a separate `AppMode.ADMIN` reached only by a deliberate gesture;
   `ui/admin/AdminScreen.kt`.
 - **REQ-GEN-004** — no home page; `FluxApp` boots straight into `STARTING → EASY`.
@@ -22,7 +22,7 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 5–6. Senior-friendly Easy Mode & visual accessibility
 - **REQ-SEN-001/002** — full-screen `PlayerSurface`; overlays are transient, not persistent.
-- **REQ-SEN-003** — 0 actions to watch; 1 action for next/prev/list/recall (`MainActivity`).
+- **REQ-SEN-003** — 0 actions to watch; 1 action for next/prev/list/category list (`MainActivity`).
 - **REQ-SEN-010/011/012** — large type (22–72sp) and high-contrast palette in `ui/theme/Theme.kt`
   and `ui/components/Components.kt`.
 - **REQ-SEN-013** — status uses words, never color alone (`strings.xml`, `ErrorMapper`, overlays).

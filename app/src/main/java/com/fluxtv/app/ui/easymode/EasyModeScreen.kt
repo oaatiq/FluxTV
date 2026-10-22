@@ -29,8 +29,8 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 
 /**
  * The WATCHING state (§25). Full-screen video with transient overlays layered above it; playback
- * keeps running underneath the channel list (REQ-CH-003). Back closes an overlay, or jumps to the
- * previously watched channel — it never accidentally exits the app (REQ-CFG-001, REQ-REM-003).
+ * keeps running underneath the channel list (REQ-CH-003). Back closes an overlay, or opens the list
+ * on the current channel's category — it never accidentally exits the app (REQ-CFG-001, REQ-REM-003).
  */
 @Composable
 fun EasyModeScreen(state: UiState, vm: AppViewModel) {
@@ -62,6 +62,8 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
             ChannelListOverlay(
                 allChannels = state.channels,
                 favoriteChannels = state.favoriteChannels,
+                categoryChannels = state.categoryChannels,
+                categoryName = state.currentGroup,
                 favorites = state.favorites,
                 currentId = state.currentChannel?.stableId,
                 tab = state.channelListTab,
@@ -79,7 +81,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
     }
 
     BackHandler(enabled = true) {
-        if (state.overlay != EasyOverlay.NONE) vm.closeOverlay() else vm.recallPrevious()
+        if (state.overlay != EasyOverlay.NONE) vm.closeOverlay() else vm.openCategoryList()
     }
 }
 

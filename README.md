@@ -69,11 +69,11 @@ HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequen
 |---|---|---|
 | **▲ / Channel +** | Next channel | — |
 | **▼ / Channel −** | Previous channel | — |
-| **◀ ▶** | — | Switch All ⇄ Favorites |
+| **◀ ▶** | — | Switch Category ⇄ All ⇄ Favorites |
 | **OK** | Open the channel list | Watch the highlighted channel |
 | **Hold OK (2s)** | Open **Settings** | — |
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |
-| **Back** | Jump to the previously watched channel | Close the list |
+| **Back** | Show the channels in the current channel's category (e.g. Maroc) | Close the list |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
@@ -99,8 +99,8 @@ can never expose destructive actions. Optionally protect it with a **PIN** (Pref
 ## Acceptance testing
 
 **The Grandfather Test (§27).** Without any explanation, a first-time user should be able to: turn
-on and see TV; go to the next/previous channel; find a channel; adjust volume; return to the
-previous channel; and keep watching after a brief network interruption.
+on and see TV; go to the next/previous channel; find a channel; adjust volume; see the other
+channels in the current category (Back); and keep watching after a brief network interruption.
 
 **Hardware decoding (REQ-HW-007).** For each reference stream, confirm in **Settings → Diagnostics**
 that *Decoding* reads **Hardware (…)**, not merely that hardware was available. Any hardware→software

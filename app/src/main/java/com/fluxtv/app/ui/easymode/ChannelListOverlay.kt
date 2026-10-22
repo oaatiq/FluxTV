@@ -40,12 +40,14 @@ import kotlinx.coroutines.delay
 /**
  * Deliberately simple channel list (§8). A left panel keeps the picture visible behind it so
  * opening the list does not interrupt viewing (REQ-CH-003). The current channel is scrolled to and
- * focused, and ◀ ▶ switch between All and Favorites.
+ * focused, and ◀ ▶ switch between the current category (when it has one), All and Favorites.
  */
 @Composable
 fun ChannelListOverlay(
     allChannels: List<Channel>,
     favoriteChannels: List<Channel>,
+    categoryChannels: List<Channel>,
+    categoryName: String?,
     favorites: Set<String>,
     currentId: String?,
     tab: ListTab,
@@ -53,7 +55,14 @@ fun ChannelListOverlay(
     onToggleFavorite: (Channel) -> Unit,
     onSwitchTab: (ListTab) -> Unit
 ) {
-    val list = if (tab == ListTab.FAVORITES) favoriteChannels else allChannels
+    // Left-to-right order of the tabs; the category tab only exists when the channel has one.
+    val tabs = if (categoryName != null) listOf(ListTab.CATEGORY, ListTab.ALL, ListTab.FAVORITES)
+    else listOf(ListTab.ALL, ListTab.FAVORITES)
+    val list = when (tab) {
+        ListTab.CATEGORY -> categoryChannels
+        ListTab.FAVORITES -> favoriteChannels
+        ListTab.ALL -> allChannels
+    }
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
 
@@ -77,8 +86,8 @@ fun ChannelListOverlay(
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
                         when (event.key) {
-                            Key.DirectionLeft -> { onSwitchTab(ListTab.ALL); true }
-                            Key.DirectionRight -> { onSwitchTab(ListTab.FAVORITES); true }
+                            Key.DirectionLeft -> { tabs.getOrNull(tabs.indexOf(tab) - 1)?.let(onSwitchTab); true }
+                            Key.DirectionRight -> { tabs.getOrNull(tabs.indexOf(tab) + 1)?.let(onSwitchTab); true }
                             else -> false
                         }
                     } else {
@@ -90,6 +99,12 @@ fun ChannelListOverlay(
             SectionTitle("Channels")
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (categoryName != null) {
+                    // Shrinks (with an ellipsis) rather than pushing the other chips off the panel.
+                    FluxChip(categoryName, tab == ListTab.CATEGORY, Modifier.weight(1f, fill = false)) {
+                        onSwitchTab(ListTab.CATEGORY)
+                    }
+                }
                 FluxChip("All channels", tab == ListTab.ALL) { onSwitchTab(ListTab.ALL) }
                 FluxChip("Favorites", tab == ListTab.FAVORITES) { onSwitchTab(ListTab.FAVORITES) }
             }
