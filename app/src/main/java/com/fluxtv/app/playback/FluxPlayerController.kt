@@ -10,6 +10,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import com.fluxtv.app.BootTrace
 import com.fluxtv.app.data.cache.DiagnosticsStore
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.model.DiagnosticsEvent
@@ -321,6 +322,10 @@ class FluxPlayerController(
                         prepareStartMs = 0L
                         _diagnostics.value = _diagnostics.value.copy(startupTimeMs = startup)
                         logEvent("startup", "Ready in $startup ms")
+                    }
+                    if (BootTrace.awaitingFirstPlay) {
+                        BootTrace.awaitingFirstPlay = false
+                        logEvent("boot", BootTrace.stamp("Picture playing"))
                     }
                     playingSinceMs = SystemClock.elapsedRealtime()
                     updateStatus(PlaybackPhase.PLAYING, message = null, prompt = false)

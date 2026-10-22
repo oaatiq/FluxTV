@@ -242,6 +242,12 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             Modifier.fillMaxWidth(0.7f)
         ) { vm.setFrameRateMatching(it) }
 
+        FluxToggleRow(
+            "Start FluxTV when the TV turns on",
+            state.settings.startOnBoot,
+            Modifier.fillMaxWidth(0.7f)
+        ) { vm.setStartOnBoot(it) }
+
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FluxChip("Every 6 hours", state.settings.refreshIntervalHours == 6) { vm.setRefreshHours(6) }

@@ -362,6 +362,10 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setFrameRateMatching(value) }
     }
 
+    fun setStartOnBoot(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setStartOnBoot(value) }
+    }
+
     fun clearDiagnostics() {
         viewModelScope.launch(Dispatchers.IO) { container.playerController.clearDiagnostics() }
     }

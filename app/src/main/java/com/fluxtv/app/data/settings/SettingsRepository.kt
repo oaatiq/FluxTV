@@ -28,7 +28,8 @@ data class FluxSettings(
     val adminPin: String = "",
     val maxVideoHeight: Int = 0,
     val refreshIntervalHours: Int = 12,
-    val frameRateMatching: Boolean = true
+    val frameRateMatching: Boolean = true,
+    val startOnBoot: Boolean = true
 ) {
     val isConfigured: Boolean get() = !playlistUrl.isNullOrBlank()
 }
@@ -46,6 +47,7 @@ class SettingsRepository(private val context: Context) {
         val MAX_VIDEO_HEIGHT = intPreferencesKey("max_video_height")
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val FRAME_RATE = booleanPreferencesKey("frame_rate_matching")
+        val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
     }
 
     val settings: Flow<FluxSettings> = context.dataStore.data.map { p ->
@@ -59,7 +61,8 @@ class SettingsRepository(private val context: Context) {
             adminPin = p[Keys.ADMIN_PIN] ?: "",
             maxVideoHeight = p[Keys.MAX_VIDEO_HEIGHT] ?: 0,
             refreshIntervalHours = p[Keys.REFRESH_HOURS] ?: 12,
-            frameRateMatching = p[Keys.FRAME_RATE] ?: true
+            frameRateMatching = p[Keys.FRAME_RATE] ?: true,
+            startOnBoot = p[Keys.START_ON_BOOT] ?: true
         )
     }
 
@@ -101,5 +104,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setFrameRateMatching(value: Boolean) {
         context.dataStore.edit { it[Keys.FRAME_RATE] = value }
+    }
+
+    suspend fun setStartOnBoot(value: Boolean) {
+        context.dataStore.edit { it[Keys.START_ON_BOOT] = value }
     }
 }

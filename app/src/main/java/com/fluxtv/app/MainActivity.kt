@@ -1,5 +1,6 @@
 package com.fluxtv.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -16,6 +17,7 @@ import com.fluxtv.app.ui.AppMode
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.EasyOverlay
 import com.fluxtv.app.ui.FluxApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         frameRateController = FrameRateController(this)
+        if (intent?.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false) == true) BootTrace.markLaunchedByBoot()
 
         setContent { FluxApp(viewModel) }
 
@@ -55,9 +58,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false)) BootTrace.markLaunchedByBoot()
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.onActivityResume()
+        if (BootTrace.awaitingOnScreen) {
+            BootTrace.awaitingOnScreen = false
+            val store = (application as FluxTvApplication).container.diagnosticsStore
+            val event = BootTrace.event("FluxTV on screen")
+            lifecycleScope.launch(Dispatchers.IO) { store.append(event) }
+        }
     }
 
     override fun onPause() {

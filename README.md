@@ -63,6 +63,18 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 
+## Start on boot
+
+By default FluxTV starts itself, straight into live TV, once the TV has finished booting. Turn it off
+in **Settings → Preferences → Start FluxTV when the TV turns on**. It only starts after a real boot
+(power loss, restart), not when the TV wakes from standby. Android 10 and newer block apps from
+opening themselves in the background, so there it needs the system's "Display over other apps"
+permission; Android 9 (e.g. the MiTV) needs nothing extra.
+
+To see how long it took, open **Settings → Diagnostics → History**: after a boot-start there are three
+`[boot]` lines (boot completed, FluxTV on screen, picture playing), each with the seconds since the
+TV powered on, so the gaps between them are the start-up delay.
+
 ## Remote control
 
 | Button | In TV (watching) | In the channel list |
