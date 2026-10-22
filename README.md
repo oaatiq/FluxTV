@@ -69,7 +69,7 @@ HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequen
 |---|---|---|
 | **▲ / Channel +** | Next channel | — |
 | **▼ / Channel −** | Previous channel | — |
-| **◀ ▶** | — | Switch Category ⇄ All ⇄ Favorites |
+| **◀ ▶** | — | Switch Categories ⇄ current category ⇄ All ⇄ Favorites. **Categories** lists every category; **OK** on one shows its channels |
 | **OK** | Open the channel list | Watch the highlighted channel |
 | **Hold OK (2s)** | Open **Settings** | — |
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |

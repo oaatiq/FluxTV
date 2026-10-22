@@ -266,6 +266,55 @@ fun ChannelRow(
     }
 }
 
+/** One category in the Categories view: its name, how many channels it holds, and a "watching" mark. */
+@Composable
+fun CategoryRow(
+    name: String,
+    count: Int,
+    isWatching: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val textColor = if (focused) OnAccent else FluxOnSurface
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .background(
+                when {
+                    focused -> FluxAccent
+                    isWatching -> FluxSurfaceVariant
+                    else -> Color.Transparent
+                }
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicText(
+            name,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(color = textColor, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+        )
+        if (isWatching) {
+            Spacer(Modifier.width(12.dp))
+            BasicText(
+                "WATCHING",
+                style = TextStyle(color = if (focused) OnAccent else FluxAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        BasicText(
+            count.toString(),
+            style = TextStyle(color = if (focused) OnAccent else FluxMuted, fontSize = 22.sp)
+        )
+    }
+}
+
 @Composable
 fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
     Row(

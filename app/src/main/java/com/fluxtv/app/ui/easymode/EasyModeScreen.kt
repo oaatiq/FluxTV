@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.EasyOverlay
+import com.fluxtv.app.ui.ListTab
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxMuted
@@ -63,11 +64,13 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel) {
                 allChannels = state.channels,
                 favoriteChannels = state.favoriteChannels,
                 categoryChannels = state.categoryChannels,
-                categoryName = state.currentGroup,
+                categoryName = state.categoryName,
+                categories = if (state.channelListTab == ListTab.CATEGORIES) state.categories else emptyList(),
                 favorites = state.favorites,
                 currentId = state.currentChannel?.stableId,
                 tab = state.channelListTab,
                 onSelect = vm::tuneTo,
+                onSelectCategory = vm::selectCategory,
                 onToggleFavorite = vm::toggleFavorite,
                 onSwitchTab = vm::setTab
             )

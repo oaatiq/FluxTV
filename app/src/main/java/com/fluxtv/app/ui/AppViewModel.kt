@@ -32,7 +32,10 @@ import java.util.concurrent.TimeUnit
 
 enum class AppMode { STARTING, EASY, ADMIN }
 enum class EasyOverlay { NONE, CHANNEL_LIST, NUMBER_ENTRY }
-enum class ListTab { CATEGORY, ALL, FAVORITES }
+/** CATEGORIES is the index of every category; the others list channels. */
+enum class ListTab { CATEGORIES, CATEGORY, ALL, FAVORITES }
+
+data class CategoryInfo(val name: String, val count: Int)
 
 data class UiState(
     val mode: AppMode = AppMode.STARTING,
@@ -46,6 +49,8 @@ data class UiState(
     val numberEntry: String = "",
     val transientMessage: String? = null,
     val channelListTab: ListTab = ListTab.ALL,
+    /** Category picked in the Categories view; null means the one being watched. */
+    val selectedGroup: String? = null,
     val settings: FluxSettings = FluxSettings(),
     val startupMessage: String = "Starting television…",
     val diagnostics: DiagnosticsSnapshot = DiagnosticsSnapshot(),
@@ -65,9 +70,20 @@ data class UiState(
     val currentGroup: String?
         get() = currentChannel?.group?.takeIf { it.isNotBlank() }
 
-    /** Every channel in the same category as the one being watched. */
+    /** Category shown in the list's category tab: the picked one, else the one being watched. */
+    val categoryName: String?
+        get() = selectedGroup ?: currentGroup
+
     val categoryChannels: List<Channel>
-        get() = currentGroup?.let { group -> channels.filter { it.group == group } } ?: emptyList()
+        get() = categoryName?.let { group -> channels.filter { it.group == group } } ?: emptyList()
+
+    /** Every category with its channel count, in playlist order. */
+    val categories: List<CategoryInfo>
+        get() = channels
+            .mapNotNull { it.group?.takeIf { group -> group.isNotBlank() } }
+            .groupingBy { it }
+            .eachCount()
+            .map { (name, count) -> CategoryInfo(name, count) }
 }
 
 /**
@@ -208,7 +224,7 @@ class AppViewModel(
     fun openChannelList() {
         if (_state.value.channels.isEmpty()) return
         val tab = if (_state.value.favoritesOnly) ListTab.FAVORITES else ListTab.ALL
-        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = tab) }
+        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = tab, selectedGroup = null) }
     }
 
     /** Back while watching: the list, scoped to the category of the channel being watched. */
@@ -219,7 +235,14 @@ class AppViewModel(
             openChannelList()
             return
         }
-        _state.update { it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = ListTab.CATEGORY) }
+        _state.update {
+            it.copy(overlay = EasyOverlay.CHANNEL_LIST, channelListTab = ListTab.CATEGORY, selectedGroup = null)
+        }
+    }
+
+    /** Picked from the Categories view: show that category's channels. */
+    fun selectCategory(name: String) {
+        _state.update { it.copy(selectedGroup = name, channelListTab = ListTab.CATEGORY) }
     }
 
     fun closeOverlay() {
