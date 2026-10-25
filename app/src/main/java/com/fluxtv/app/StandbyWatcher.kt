@@ -39,7 +39,7 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Guards against the handful of wake signals Android sends within a second of each other. */
-    private var lastWakeMs = Long.MIN_VALUE
+    private var lastWakeMs = -WAKE_MIN_GAP_MS
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
