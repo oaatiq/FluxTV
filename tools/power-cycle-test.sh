@@ -50,9 +50,23 @@ case $TARGET in
 esac
 SERIAL=$TARGET
 
+# `timeout` is not on a stock macOS; fall back to gtimeout, then to a watchdog.
+tmo() {
+    local secs=$1; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; return $?; fi
+    if command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"; return $?; fi
+    "$@" &
+    local pid=$! rc=0
+    ( sleep "$secs"; kill -TERM "$pid" ) >/dev/null 2>&1 &
+    local watchdog=$!
+    wait "$pid" 2>/dev/null || rc=$?
+    kill "$watchdog" >/dev/null 2>&1
+    return $rc
+}
+
 adbx() { adb -s "$SERIAL" "$@"; }
 step() { printf '\n=== %s ===\n' "$*"; }
-alive() { [ "$(adbx shell echo ok 2>/dev/null | tr -d '\r\n')" = ok ]; }
+alive() { [ "$(tmo 10 adb -s "$SERIAL" shell echo ok 2>/dev/null | tr -d '\r\n')" = ok ]; }
 on_screen() {
     adbx shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus | tr -d '\r' |
         sed -E 's/^.*mCurrentFocus=//; s/^Window\{[^ ]+ [^ ]+ //; s/\}$//'
@@ -60,17 +74,16 @@ on_screen() {
 awake() { adbx shell dumpsys power 2>/dev/null | grep -q "mWakefulness=Awake"; }
 
 connect() {
-    case $SERIAL in *:*) adb connect "$SERIAL" >/dev/null 2>&1 ;; esac
+    case $SERIAL in *:*) tmo 10 adb connect "$SERIAL" >/dev/null 2>&1 ;; esac
 }
 
-# Reconnects until the box answers again, for boxes whose network goes down in standby.
-wait_back() {
-    local waited=0
-    while [ "$waited" -lt 180 ]; do
+# Reconnects until the box answers, for boxes whose network goes down in standby.
+wait_alive() {
+    local budget=${1:-180} start=$SECONDS
+    while [ $((SECONDS - start)) -lt "$budget" ]; do
         connect
         alive && return 0
-        sleep 3
-        waited=$((waited + 3))
+        sleep 2
     done
     return 1
 }
@@ -88,7 +101,7 @@ wake() {
         awake || adbx shell input keyevent KEYCODE_POWER >/dev/null 2>&1
     else
         echo ">>> The box is off the network in standby. Press the power button on the remote now."
-        wait_back || { echo "Still unreachable after 3 minutes — giving up on this case."; return 1; }
+        wait_alive 180 || { echo "Still unreachable after 3 minutes — giving up on this case."; return 1; }
     fi
     sleep 12
 }
@@ -133,9 +146,15 @@ report() {
     history_tail
 }
 
-connect
 step "Device"
-adbx wait-for-device
+if ! wait_alive 30; then
+    echo "Cannot reach $SERIAL — nothing to test. Usual causes:"
+    echo "  - the address is wrong, or the box is off or in standby (standby drops adb on most boxes)"
+    echo "  - adb over the network is not enabled: Developer options -> ADB over network, and on"
+    echo "    many boxes a one-off 'adb tcpip 5555' while plugged in over USB"
+    echo "  - another adb client holds the box: try 'adb disconnect' and run again"
+    exit 1
+fi
 for prop in ro.product.model ro.product.board ro.build.version.release ro.build.version.sdk; do
     echo "- $prop = $(adbx shell getprop $prop 2>/dev/null | tr -d '\r')"
 done
