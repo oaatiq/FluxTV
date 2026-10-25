@@ -161,7 +161,21 @@ done
 
 if [ -n "$APK" ]; then
     step "Install"
-    adbx install -r "$APK" || exit 1
+    out=$(adbx install -r "$APK" 2>&1)
+    printf '%s\n' "$out"
+    case $out in
+        *INSTALL_FAILED_UPDATE_INCOMPATIBLE*|*signatures\ do\ not\ match*|*INSTALL_FAILED_VERSION_DOWNGRADE*)
+            echo
+            echo "A build signed with a different key is already on the box — a debug APK cannot"
+            echo "replace a release one (or the other way round). Either:"
+            echo "  - build the same flavour that is installed (./gradlew assembleRelease), or"
+            echo "  - adb -s $SERIAL uninstall $PKG   <- this also wipes the playlist and favorites"
+            echo "Note the diagnostics history below is only readable over adb on a debug build;"
+            echo "on a release build use the logcat lines, which both builds write."
+            exit 1 ;;
+        *Success*) ;;
+        *) echo "Install did not report success — stopping."; exit 1 ;;
+    esac
 fi
 
 if [ "$GRANT" = 1 ]; then
