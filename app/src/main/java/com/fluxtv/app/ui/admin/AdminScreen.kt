@@ -38,8 +38,6 @@ import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
-import com.fluxtv.app.openHomeAppSettings
-import com.fluxtv.app.openOtherLauncher
 import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
@@ -306,17 +304,6 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
                 "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
                 style = TextStyle(color = FluxMuted, fontSize = 18.sp)
             )
-        }
-
-        // Android restarts the Home app by itself, even after a force-stop, so making FluxTV the Home
-        // app is what keeps it coming up. The second button is the way back to the TV's launcher.
-        BasicText(
-            "To make sure FluxTV always comes up, even after it was force-stopped, make it the Home app.",
-            style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FluxButton("Choose Home app") { openHomeAppSettings(context) }
-            FluxButton("Open the TV's own launcher") { openOtherLauncher(context) }
         }
 
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))

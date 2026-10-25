@@ -22,10 +22,10 @@ import rikka.shizuku.Shizuku
  * Where FluxTV uses Shizuku, when the TV has it, to start itself after a force-stop.
  *
  * A force-stopped app is not run again by anything but a launch: no boot signal, no wake signal, no
- * process. Making FluxTV the Home app covers a restart, and Android treats a wake as no start at
- * all. What survives a force-stop is a process that is not FluxTV's, so with Shizuku's permission
- * this starts [WakeDaemon] in one of Shizuku's own (daemon mode: it runs until Shizuku stops, not
- * until FluxTV does) and tells it whether "Start FluxTV when the TV turns on" is on.
+ * process, and Android sends no Home when the TV wakes. What survives a force-stop is a process that
+ * is not FluxTV's, so with Shizuku's permission this starts [WakeDaemon] in one of Shizuku's own
+ * (daemon mode: it runs until Shizuku stops, not until FluxTV does) and tells it whether "Start
+ * FluxTV when the TV turns on" is on.
  *
  * Everything here is best effort and quiet: without Shizuku, or without its permission, FluxTV
  * behaves as before and Settings → Preferences says what is missing. Shizuku starts the helper

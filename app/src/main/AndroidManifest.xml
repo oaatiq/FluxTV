@@ -45,17 +45,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!--
-                Lets FluxTV be chosen as the TV's Home app. Android itself starts the Home app at
-                boot and restarts it when it is killed, which also brings back an app that was
-                force-stopped: a stopped app receives no BOOT_COMPLETED and has no process to hear
-                a wake, so nothing inside FluxTV can recover from that.
-            -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
 
         <!--
