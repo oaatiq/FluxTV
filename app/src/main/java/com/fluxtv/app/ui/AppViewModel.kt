@@ -95,6 +95,9 @@ class AppViewModel(
     private var transientJob: Job? = null
     private var currentChannelId: String? = null
     private var started = false
+    private var resumed = false
+    private var videoSurfaceReady = false
+    private var retuneWhenOnScreen = false
 
     init {
         container.networkMonitor.start()
@@ -288,6 +291,7 @@ class AppViewModel(
 
     fun exitAdmin() {
         _state.update { it.copy(mode = AppMode.EASY) }
+        if (retuneIfReturning()) return
         container.playerController.onResume()
         if (_state.value.currentChannel == null) {
             val lineup = _state.value.lineup
@@ -376,11 +380,54 @@ class AppViewModel(
     // ---------- lifecycle ----------
 
     fun onActivityResume() {
+        resumed = true
+        if (retuneIfReturning()) return
         if (_state.value.mode == AppMode.EASY) container.playerController.onResume()
     }
 
     fun onActivityPause() {
+        resumed = false
         container.playerController.onPause()
+    }
+
+    /**
+     * FluxTV has left the screen: the TV went into standby, or another app took over. Playback is
+     * stopped (not just paused) because the video surface goes away with it, and the channel is
+     * re-tuned on the way back instead of resumed — see [FluxPlayerController.onStop].
+     */
+    fun onActivityStop() {
+        resumed = false
+        if (_state.value.currentChannel != null) retuneWhenOnScreen = true
+        container.playerController.onStop()
+    }
+
+    /** The video surface has been (re)created, so the player has somewhere to put the picture. */
+    fun onVideoSurfaceReady() {
+        videoSurfaceReady = true
+        retuneIfReturning()
+    }
+
+    /** The video surface has gone: standby, or Easy Mode making way for the Settings screen. */
+    fun onVideoSurfaceLost() {
+        videoSurfaceReady = false
+        // The decoder in use was built around this surface and cannot be handed the replacement, so
+        // the channel is re-tuned rather than resumed once a new surface arrives.
+        if (_state.value.currentChannel != null) retuneWhenOnScreen = true
+    }
+
+    /**
+     * Re-tunes after FluxTV comes back, but only once it is both resumed and holding a live video
+     * surface: tuning any earlier would build the decoder around the surface that is on its way out,
+     * which is exactly the black picture this avoids. Either event can be the last to arrive, so
+     * both call in here, as does leaving Settings — the surface is new on the way back from there too.
+     */
+    private fun retuneIfReturning(): Boolean {
+        if (!retuneWhenOnScreen || !resumed || !videoSurfaceReady) return false
+        if (_state.value.mode != AppMode.EASY) return false
+        val channel = _state.value.currentChannel ?: return false
+        retuneWhenOnScreen = false
+        tuneTo(channel)
+        return true
     }
 
     override fun onCleared() {

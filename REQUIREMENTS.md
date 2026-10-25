@@ -19,6 +19,13 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-START-005/006** — `ui/startup/StartingScreen.kt` (calm, non-technical, auto-dismissed).
 - **REQ-START-007** — `withTimeoutOrNull(20s)` around the first refresh so loading never hangs.
 - **REQ-START-008** — on empty/failed restore, EASY still opens and recovery/next-channel apply.
+- **REQ-SEN-003 (0 actions to watch)** — `BootReceiver` starts FluxTV after a boot and
+  `StandbyWatcher` brings it to the front when the TV wakes from standby (the remote's power button
+  suspends the TV and sends no boot signal), both behind the same preference.
+- **Standby playback** — `MainActivity.onStop` → `FluxPlayerController.onStop` stops playback when
+  FluxTV leaves the screen, and `AppViewModel.retuneIfReturning` re-tunes once it is back with a new
+  video surface: a decoder cannot be moved onto a surface built after a standby (sound without
+  picture on the MiTV), and a live stream needs rejoining by then regardless.
 
 ## 5–6. Senior-friendly Easy Mode & visual accessibility
 - **REQ-SEN-001/002** — full-screen `PlayerSurface`; overlays are transient, not persistent.

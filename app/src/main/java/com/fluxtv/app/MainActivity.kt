@@ -80,6 +80,13 @@ class MainActivity : ComponentActivity() {
         viewModel.onActivityPause()
     }
 
+    // The TV has gone into standby, or another app is on screen: the video surface goes away with
+    // the window, so playback stops here and the channel is re-tuned when FluxTV comes back.
+    override fun onStop() {
+        super.onStop()
+        viewModel.onActivityStop()
+    }
+
     override fun onDestroy() {
         frameRateController.reset()
         super.onDestroy()

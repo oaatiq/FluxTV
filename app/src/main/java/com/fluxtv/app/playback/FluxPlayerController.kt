@@ -149,6 +149,26 @@ class FluxPlayerController(
         bundle?.player?.pause()
     }
 
+    /**
+     * FluxTV is no longer on screen: the TV has gone into standby, or another app has taken over.
+     * The video surface goes away with it, so playback is stopped rather than paused, which releases
+     * the decoder.
+     *
+     * Keeping the decoder across a standby is what loses the picture on wake: the MiTV's MStar
+     * decoder accepts the new surface and then only ever produces sound, so the Viewer gets audio
+     * and a black screen. A live stream is stale after a standby anyway, so the caller re-tunes from
+     * the live edge once the new surface is in place, which also builds a fresh decoder for it.
+     */
+    fun onStop() {
+        val p = bundle?.player ?: return
+        retryJob?.cancel()
+        bufferingWatchdog?.cancel()
+        slowRetryJob?.cancel()
+        stabilityJob?.cancel()
+        p.stop()
+        if (currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
+    }
+
     fun release() {
         retryJob?.cancel()
         bufferingWatchdog?.cancel()

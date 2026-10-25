@@ -39,7 +39,13 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     val playerReady by vm.controller.playerReady.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        PlayerSurface(vm.controller, playerReady, Modifier.fillMaxSize())
+        PlayerSurface(
+            controller = vm.controller,
+            playerReady = playerReady,
+            onSurfaceReady = vm::onVideoSurfaceReady,
+            onSurfaceLost = vm::onVideoSurfaceLost,
+            modifier = Modifier.fillMaxSize()
+        )
 
         if (state.channels.isEmpty()) {
             NoChannelsHint()

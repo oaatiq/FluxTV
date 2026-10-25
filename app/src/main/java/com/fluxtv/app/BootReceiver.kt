@@ -29,6 +29,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Android 10+ blocks activities started from the background, so on those versions this only works
  * where the platform exempts the app (e.g. the "Display over other apps" permission); the MiTV
  * (Android 9) is not restricted.
+ *
+ * A boot is only one of the two ways a TV turns on: the remote's power button suspends the TV
+ * instead of switching it off, and sends no boot signal when it comes back. [StandbyWatcher] covers
+ * that half.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -48,11 +52,11 @@ class BootReceiver : BroadcastReceiver() {
                 val message = when {
                     settings?.startOnBoot == false -> "$signal: start on boot is off"
                     firstSignal -> {
-                        launchApp(context, fromBoot = true)
+                        launchFluxTv(context, fromBoot = true)
                         "$signal: starting FluxTV ${BootTrace.timings(enteredMs, settingReadMs)}"
                     }
-                    !isInForeground() -> {
-                        launchApp(context, fromBoot = false)
+                    !isFluxTvOnScreen() -> {
+                        launchFluxTv(context, fromBoot = false)
                         "$signal: bringing FluxTV to the front"
                     }
                     else -> "$signal: FluxTV is already on screen"
@@ -64,25 +68,34 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun launchApp(context: Context, fromBoot: Boolean) {
-        context.startActivity(
-            Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(BootTrace.EXTRA_FROM_BOOT, fromBoot)
-        )
-    }
-
-    private fun isInForeground(): Boolean {
-        val info = ActivityManager.RunningAppProcessInfo()
-        ActivityManager.getMyMemoryState(info)
-        return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-    }
-
     private companion object {
         const val ACTION_QUICKBOOT_POWERON = "android.intent.action.QUICKBOOT_POWERON"
         val START_ACTIONS = setOf(Intent.ACTION_BOOT_COMPLETED, ACTION_QUICKBOOT_POWERON)
         const val SETTINGS_TIMEOUT_MS = 3_000L
     }
+}
+
+/**
+ * Starts FluxTV, or brings it back to the front if it is already running. Best effort: a platform
+ * that refuses the start (Android 10+ blocks apps from opening themselves in the background) must
+ * never take the app down with it.
+ */
+internal fun launchFluxTv(context: Context, fromBoot: Boolean) {
+    try {
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(BootTrace.EXTRA_FROM_BOOT, fromBoot)
+        )
+    } catch (_: Exception) {
+    }
+}
+
+/** True while FluxTV has something on screen, so it does not need starting or bringing forward. */
+internal fun isFluxTvOnScreen(): Boolean {
+    val info = ActivityManager.RunningAppProcessInfo()
+    ActivityManager.getMyMemoryState(info)
+    return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
 }
 
 /**

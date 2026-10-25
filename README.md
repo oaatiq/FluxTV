@@ -74,13 +74,27 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 
-## Start on boot
+## Start when the TV turns on
 
-By default FluxTV starts itself, straight into live TV, once the TV has finished booting. Turn it off
-in **Settings → Preferences → Start FluxTV when the TV turns on**. It only starts after a real boot
-(power loss, restart), not when the TV wakes from standby. Android 10 and newer block apps from
+By default FluxTV starts itself, straight into live TV, whenever the TV comes on. Turn it off in
+**Settings → Preferences → Start FluxTV when the TV turns on**. Android 10 and newer block apps from
 opening themselves in the background, so there it needs the system's "Display over other apps"
 permission; Android 9 (e.g. the MiTV) needs nothing extra.
+
+A TV turns on in two different ways, and FluxTV covers both:
+
+- **A real boot** (power loss, restart). Android sends `BOOT_COMPLETED`, which `BootReceiver` picks
+  up from the manifest even when FluxTV is not running.
+- **Waking from standby**, which is what the remote's power button actually does: it suspends the TV
+  rather than switching it off, so no boot signal follows and the TV simply shows whatever it had on
+  screen before. `StandbyWatcher` listens for the wake (`ACTION_SCREEN_ON`) and brings FluxTV to the
+  front. Android only delivers that signal to receivers registered in code, so this half works while
+  FluxTV's process is alive — Android normally keeps it cached through a standby — and the wake of a
+  TV that killed the process in the meantime goes unheard. The `[wake]` lines in **Settings →
+  Diagnostics → History** record each screen-off and wake, and what FluxTV did about it.
+
+Because waking the TV is treated as turning it on, FluxTV also comes to the front when the TV wakes
+while another app was left on screen. Turn the preference off if that is not what you want.
 
 To see how long it took, open **Settings → Diagnostics → History**: after a boot-start there are three
 `[boot]` lines (boot signal, FluxTV on screen, picture playing), each with the seconds since the TV
@@ -97,6 +111,16 @@ is compiled when it is installed, so it doesn't need this:
 ```bash
 adb shell cmd package compile -m speed -f com.fluxtv.app
 ```
+
+## Standby and the picture
+
+Going into standby takes the video surface away from FluxTV, and a decoder that was playing cannot be
+moved onto the new surface the TV builds on wake: the MiTV's MStar decoder keeps the sound and never
+produces another frame, which looks like a channel playing with a black screen. So FluxTV stops
+playback when it leaves the screen and re-tunes the channel once it is back with a surface of its
+own, which builds a fresh decoder and rejoins the live edge — a live stream has moved on during a
+standby anyway. The same applies on the way back from Settings and from another app. Expect the
+couple of seconds a normal channel change takes, with the channel banner while it loads.
 
 ## Remote control
 
