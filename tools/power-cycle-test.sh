@@ -166,9 +166,11 @@ if [ -n "$APK" ]; then
     case $out in
         *INSTALL_FAILED_UPDATE_INCOMPATIBLE*|*signatures\ do\ not\ match*|*INSTALL_FAILED_VERSION_DOWNGRADE*)
             echo
-            echo "A build signed with a different key is already on the box — a debug APK cannot"
-            echo "replace a release one (or the other way round). Either:"
-            echo "  - build the same flavour that is installed (./gradlew assembleRelease), or"
+            echo "The box holds a build signed with a different key. Debug and release both use the"
+            echo "debug keystore here, so they replace each other fine on one machine — but that"
+            echo "keystore is per-machine, so an APK built elsewhere (another laptop, a CI runner)"
+            echo "cannot update this install. Either:"
+            echo "  - build on the machine that produced the installed APK, or"
             echo "  - adb -s $SERIAL uninstall $PKG   <- this also wipes the playlist and favorites"
             echo "Note the diagnostics history below is only readable over adb on a debug build;"
             echo "on a release build use the logcat lines, which both builds write."
