@@ -154,10 +154,12 @@ class FluxPlayerController(
      * The video surface goes away with it, so playback is stopped rather than paused, which releases
      * the decoder.
      *
-     * Keeping the decoder across a standby is what loses the picture on wake: the MiTV's MStar
-     * decoder accepts the new surface and then only ever produces sound, so the Viewer gets audio
-     * and a black screen. A live stream is stale after a standby anyway, so the caller re-tunes from
-     * the live edge once the new surface is in place, which also builds a fresh decoder for it.
+     * Keeping the decoder across a standby is what loses the picture on wake: handed the surface
+     * the TV built on the way back, plenty of TV decoders accept it and then only ever produce
+     * sound, which is the channel playing with a black screen. Which ones do that is device
+     * specific — Media3 carries its own blocklist of them — so FluxTV does not rely on the swap
+     * anywhere. A live stream is stale after a standby anyway, so the caller re-tunes from the live
+     * edge once the new surface is in place, which also builds a fresh decoder for it.
      */
     fun onStop() {
         val p = bundle?.player ?: return
@@ -185,6 +187,19 @@ class FluxPlayerController(
         // the activity (Exit closes the activity, the process may be reused), and recovery retries,
         // logging and the network-restore collector all run in it. The next playChannel() builds a
         // fresh player.
+    }
+
+    /** Recorded by the UI when FluxTV is back on screen and re-tunes to rebuild the decoder. */
+    fun logReturnToScreen() {
+        logEvent("standby", "Back on screen with a new video surface: re-tuning ${currentChannel?.name}")
+    }
+
+    /**
+     * Re-reads the history from disk. The boot and standby-wake receivers append to the store
+     * without going through this controller, so their lines can be newer than the list held here.
+     */
+    fun reloadEvents() {
+        scope.launch(Dispatchers.IO) { _events.value = diagnosticsStore.load() }
     }
 
     fun clearDiagnostics() {

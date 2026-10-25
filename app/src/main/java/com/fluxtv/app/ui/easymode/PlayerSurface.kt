@@ -21,9 +21,9 @@ import com.fluxtv.app.playback.FluxPlayerController
  * has created its ExoPlayer.
  *
  * A TV going into standby destroys the video surface and builds a new one on wake, and a decoder
- * that was playing cannot be moved onto the replacement: on the MiTV it keeps the sound and loses
- * the picture. [onSurfaceReady] and [onSurfaceLost] report those two moments so the channel can be
- * re-tuned against the new surface.
+ * that was playing cannot be relied on to move onto the replacement: many TV decoders keep the
+ * sound and lose the picture. [onSurfaceReady] and [onSurfaceLost] report those two moments so the
+ * channel can be re-tuned against the new surface.
  */
 @Composable
 fun PlayerSurface(

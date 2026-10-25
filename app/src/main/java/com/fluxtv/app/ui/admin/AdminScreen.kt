@@ -27,12 +27,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
+import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.ChannelRow
@@ -230,6 +233,7 @@ private fun ChannelsSection(state: UiState, vm: AppViewModel) {
 
 @Composable
 private fun PreferencesSection(state: UiState, vm: AppViewModel) {
+    val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
@@ -264,6 +268,17 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             Modifier.fillMaxWidth(0.7f)
         ) { vm.setStartOnBoot(it) }
 
+        // Android 10+ blocks an app from opening itself unless it is exempt, so on those versions
+        // the toggle above needs one permission from the administrator to have any effect.
+        if (state.settings.startOnBoot && !canStartItself(context)) {
+            BasicText(
+                "This Android version needs one more permission before FluxTV may open itself.\n" +
+                    "Choose FluxTV on the next screen and allow it.",
+                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+            )
+            FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
+        }
+
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FluxChip("Every 6 hours", state.settings.refreshIntervalHours == 6) { vm.setRefreshHours(6) }
@@ -296,6 +311,9 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
     var reachability by remember { mutableStateOf<String?>(null) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // The boot and wake receivers write history straight to the store, so pick up anything the
+    // player has not seen.
+    LaunchedEffect(Unit) { vm.reloadDiagnosticsEvents() }
     // Buffer, bandwidth and dropped frames otherwise only refresh on playback state changes.
     LaunchedEffect(Unit) {
         while (true) {

@@ -348,6 +348,9 @@ class AppViewModel(
 
     fun refreshDiagnostics() = container.playerController.refreshDiagnostics()
 
+    /** Picks up history written outside the player, i.e. the boot and wake receivers' lines. */
+    fun reloadDiagnosticsEvents() = container.playerController.reloadEvents()
+
     fun clearDiagnostics() {
         viewModelScope.launch(Dispatchers.IO) { container.playerController.clearDiagnostics() }
     }
@@ -393,7 +396,8 @@ class AppViewModel(
     /**
      * FluxTV has left the screen: the TV went into standby, or another app took over. Playback is
      * stopped (not just paused) because the video surface goes away with it, and the channel is
-     * re-tuned on the way back instead of resumed — see [FluxPlayerController.onStop].
+     * re-tuned on the way back instead of resumed, rather than handing the decoder that was playing
+     * a surface built after the standby — see [FluxPlayerController.onStop].
      */
     fun onActivityStop() {
         resumed = false
@@ -426,6 +430,7 @@ class AppViewModel(
         if (_state.value.mode != AppMode.EASY) return false
         val channel = _state.value.currentChannel ?: return false
         retuneWhenOnScreen = false
+        container.playerController.logReturnToScreen()
         tuneTo(channel)
         return true
     }

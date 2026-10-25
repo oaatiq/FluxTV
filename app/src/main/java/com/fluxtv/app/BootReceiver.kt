@@ -1,6 +1,5 @@
 package com.fluxtv.app
 
-import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -73,29 +72,6 @@ class BootReceiver : BroadcastReceiver() {
         val START_ACTIONS = setOf(Intent.ACTION_BOOT_COMPLETED, ACTION_QUICKBOOT_POWERON)
         const val SETTINGS_TIMEOUT_MS = 3_000L
     }
-}
-
-/**
- * Starts FluxTV, or brings it back to the front if it is already running. Best effort: a platform
- * that refuses the start (Android 10+ blocks apps from opening themselves in the background) must
- * never take the app down with it.
- */
-internal fun launchFluxTv(context: Context, fromBoot: Boolean) {
-    try {
-        context.startActivity(
-            Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(BootTrace.EXTRA_FROM_BOOT, fromBoot)
-        )
-    } catch (_: Exception) {
-    }
-}
-
-/** True while FluxTV has something on screen, so it does not need starting or bringing forward. */
-internal fun isFluxTvOnScreen(): Boolean {
-    val info = ActivityManager.RunningAppProcessInfo()
-    ActivityManager.getMyMemoryState(info)
-    return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
 }
 
 /**

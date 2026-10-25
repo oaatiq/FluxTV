@@ -6,6 +6,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!--
+        Android 10+ refuses to let an app open itself while none of it is on screen, which is what
+        starting after a boot or a wake from standby asks for; "Display over other apps" is the
+        exemption the platform documents for it. Asking here is what puts FluxTV in that screen's
+        list: the permission stays off until an administrator grants it (Settings → Preferences),
+        and FluxTV never draws an overlay.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- TV app, but tolerate non-TV devices for development. -->
     <uses-feature

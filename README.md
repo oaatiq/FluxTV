@@ -77,9 +77,22 @@ HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequen
 ## Start when the TV turns on
 
 By default FluxTV starts itself, straight into live TV, whenever the TV comes on. Turn it off in
-**Settings → Preferences → Start FluxTV when the TV turns on**. Android 10 and newer block apps from
-opening themselves in the background, so there it needs the system's "Display over other apps"
-permission; Android 9 (e.g. the MiTV) needs nothing extra.
+**Settings → Preferences → Start FluxTV when the TV turns on**.
+
+**Android 10 and newer need one permission.** Those versions refuse to let an app open itself while
+none of it is on screen, which is exactly what starting after a boot or a wake asks for, and the
+platform's documented exemption is "Display over other apps". FluxTV asks for it in the manifest so
+it appears in that screen's list, never draws an overlay with it, and leaves the decision to the
+administrator: when it is missing, **Settings → Preferences** offers **Allow FluxTV to open itself**
+right under the toggle, which opens Android's screen for it. By adb instead:
+
+```bash
+adb shell appops set com.fluxtv.app SYSTEM_ALERT_WINDOW allow
+```
+
+Android 9 and older (e.g. the MiTV) never blocked it and need nothing extra. Android may also let a
+start through on its own when FluxTV still owns a task on the Recents screen, so it can work without
+the permission — the `[wake]`/`[boot]` lines in the Diagnostics history say whether it actually did.
 
 A TV turns on in two different ways, and FluxTV covers both:
 
@@ -115,8 +128,8 @@ adb shell cmd package compile -m speed -f com.fluxtv.app
 ## Standby and the picture
 
 Going into standby takes the video surface away from FluxTV, and a decoder that was playing cannot be
-moved onto the new surface the TV builds on wake: the MiTV's MStar decoder keeps the sound and never
-produces another frame, which looks like a channel playing with a black screen. So FluxTV stops
+relied on to move onto the new surface the TV builds on wake: many TV decoders accept it and never
+produce another frame, which looks like a channel playing with a black screen. So FluxTV stops
 playback when it leaves the screen and re-tunes the channel once it is back with a surface of its
 own, which builds a fresh decoder and rejoins the live edge — a live stream has moved on during a
 standby anyway. The same applies on the way back from Settings and from another app. Expect the
@@ -171,6 +184,45 @@ channels in the current category (Back); and keep watching after a brief network
 **Hardware decoding (REQ-HW-007).** For each reference stream, confirm in **Settings → Diagnostics**
 that *Decoding* reads **Hardware (…)**, not merely that hardware was available. Any hardware→software
 fallback is recorded in the diagnostics **History**.
+
+**Power off / on from the remote.** The remote's power button suspends the TV rather than switching
+it off, which is a different path from a restart and has to be tested on the device itself. Both
+cases below end in **Settings → Diagnostics → History**, where `[wake]` and `[standby]` lines record
+what FluxTV saw and did.
+
+1. *Picture comes back.* While watching, power off, wait ~30 s, power on. Expect the channel banner
+   and a picture within the few seconds a channel change takes — sound without a picture is the
+   failure this is testing for. The history should show `[standby] FluxTV left the screen` and then
+   a fresh `[startup] Preparing …`.
+2. *FluxTV comes back on its own.* Press Home so another app is on screen, then power off, wait
+   ~30 s, power on. Expect FluxTV on screen by itself. The history should show
+   `[wake] SCREEN_ON: bringing FluxTV to the front` followed by `[wake] SCREEN_ON: FluxTV is on
+   screen`. `FluxTV did not come up` instead means Android refused the start: grant the permission
+   above. No `[wake]` line at all means the TV never announced the wake to the app (or its process
+   had been killed), which the app cannot work around.
+
+`tools/power-cycle-test.sh` runs both cases over adb from a machine on the same network as the TV,
+and prints the evidence for each (focused app, the `FluxTV` logcat lines, any self-start Android
+refused, and the tail of the diagnostics history):
+
+```bash
+tools/power-cycle-test.sh 192.168.2.135                        # adb over the network
+tools/power-cycle-test.sh <serial> --install app-debug.apk --grant
+```
+
+It uses `KEYCODE_SLEEP`/`KEYCODE_WAKEUP`, which is the same screen-off/screen-on the power button
+goes through and is quicker to repeat than the remote. A box that leaves the network while suspended
+cannot be woken over adb at all: the script says so, waits for the power button on the remote, and
+carries on when the box answers again — and a vendor's deeper standby is worth one pass with the
+remote regardless. Case 1 ends in "look at the TV", because no adb command can see a picture.
+
+So that both cases can be followed from outside the app — they happen while nobody can open
+Settings — the `[boot]`, `[wake]` and `[standby]` history lines are also written to logcat under the
+tag `FluxTV` (`adb logcat -s FluxTV:I`). Playback lines are not: those carry the channel URL, and a
+playlist URL can carry credentials.
+
+Devices: Xiaomi MiTV (MStar, Android 9) and MINIX NEO U8K-ULTRA (Amlogic S928X-K, Android 11 AOSP —
+the Android version that needs the permission above).
 
 ## Project structure
 

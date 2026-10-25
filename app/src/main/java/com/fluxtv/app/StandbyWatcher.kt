@@ -10,6 +10,7 @@ import com.fluxtv.app.data.model.DiagnosticsEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -28,7 +29,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * nothing while FluxTV is already the app on screen. Two limits are worth knowing: it can only work
  * while the process is alive — Android normally keeps it cached through a standby, but a process the
  * TV has killed has nothing left to hear the wake — and, as with the boot path, Android 10+ blocks
- * apps from opening themselves in the background unless the platform exempts them.
+ * apps from opening themselves in the background unless the platform exempts them (see
+ * [canStartItself]). Each wake is logged with what came of it, so a start the TV refused shows up in
+ * the Diagnostics history instead of looking like a wake that never arrived.
  */
 class StandbyWatcher(context: Context, private val container: AppContainer) {
 
@@ -75,21 +78,42 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
                 null
             }
             if (settings?.startOnBoot == false) {
-                log("$signal: start when the TV turns on is off")
+                record("$signal: start when the TV turns on is off")
                 return@launch
             }
             launchFluxTv(appContext, fromBoot = false)
-            log("$signal: bringing FluxTV to the front")
+            record(
+                if (canStartItself(appContext)) "$signal: bringing FluxTV to the front"
+                else "$signal: bringing FluxTV to the front (without \"Display over other apps\", " +
+                    "this Android version may refuse it)"
+            )
+            // Android can refuse the start without saying so, so the history records whether FluxTV
+            // actually came up: that is the difference between "the TV never told us it woke" and
+            // "it told us and would not let us open".
+            delay(LAUNCH_CHECK_MS)
+            record(
+                if (isFluxTvOnScreen()) "$signal: FluxTV is on screen"
+                else "$signal: FluxTV did not come up — allow it to open itself in " +
+                    "Settings → Preferences"
+            )
         }
     }
 
+    /** Appends on the calling thread, so several lines from one wake stay in the order they happened. */
+    private fun record(message: String) {
+        container.diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), null, "wake", message))
+    }
+
+    /** For the broadcast thread, which must not wait on a file write. */
     private fun log(message: String) {
-        val event = DiagnosticsEvent(System.currentTimeMillis(), null, "wake", message)
-        scope.launch { container.diagnosticsStore.append(event) }
+        scope.launch { record(message) }
     }
 
     private companion object {
         const val WAKE_MIN_GAP_MS = 5_000L
         const val SETTINGS_TIMEOUT_MS = 3_000L
+
+        /** Long enough for a slow TV to put the activity on screen before the start is judged. */
+        const val LAUNCH_CHECK_MS = 6_000L
     }
 }

@@ -24,8 +24,8 @@ added **Hardware resource utilization** section) is met in this implementation.
   suspends the TV and sends no boot signal), both behind the same preference.
 - **Standby playback** — `MainActivity.onStop` → `FluxPlayerController.onStop` stops playback when
   FluxTV leaves the screen, and `AppViewModel.retuneIfReturning` re-tunes once it is back with a new
-  video surface: a decoder cannot be moved onto a surface built after a standby (sound without
-  picture on the MiTV), and a live stream needs rejoining by then regardless.
+  video surface: many TV decoders cannot be moved onto a surface built after a standby (sound
+  without picture), and a live stream needs rejoining by then regardless.
 
 ## 5–6. Senior-friendly Easy Mode & visual accessibility
 - **REQ-SEN-001/002** — full-screen `PlayerSurface`; overlays are transient, not persistent.
@@ -106,7 +106,9 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-CFG-001..005** — admin behind hold-OK/MENU and optional PIN; no config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
 - **REQ-SEC-001..005** — credentials never shown to the Viewer; minimal permissions (INTERNET,
-  ACCESS_NETWORK_STATE, WAKE_LOCK); no analytics/telemetry.
+  ACCESS_NETWORK_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, and SYSTEM_ALERT_WINDOW purely as the
+  platform's exemption for opening itself when the TV turns on — never used to draw an overlay, and
+  off until an administrator grants it); no analytics/telemetry.
 
 ## 25. Easy Mode state model
 - `AppViewModel` implements `STARTING → WATCHING ⇄ CHANNEL LIST` with `recovery → WATCHING`.
