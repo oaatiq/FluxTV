@@ -12,6 +12,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import com.fluxtv.app.data.model.DiagnosticsEvent
 import com.fluxtv.app.playback.FrameRateController
 import com.fluxtv.app.ui.AppMode
 import com.fluxtv.app.ui.AppViewModel
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
         }
         frameRateController = FrameRateController(this)
         if (intent?.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false) == true) BootTrace.markLaunchedByBoot()
+        if (savedInstanceState == null) noteStartedByWakeHelper(intent)
 
         setContent { FluxApp(viewModel, onExit = ::finishAndRemoveTask) }
 
@@ -62,6 +64,19 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false)) BootTrace.markLaunchedByBoot()
+        noteStartedByWakeHelper(intent)
+    }
+
+    // The Shizuku helper starts FluxTV when the TV wakes and FluxTV has no process; the Diagnostics
+    // history is where an administrator checks that it did.
+    private fun noteStartedByWakeHelper(intent: Intent?) {
+        if (intent?.getBooleanExtra(WakeDaemon.EXTRA_STARTED_BY_HELPER, false) != true) return
+        val store = (application as FluxTvApplication).container.diagnosticsStore
+        val event = DiagnosticsEvent(
+            System.currentTimeMillis(), null, "wake",
+            "The TV woke while FluxTV was not running: the Shizuku helper started it"
+        )
+        lifecycleScope.launch(Dispatchers.IO) { store.append(event) }
     }
 
     override fun onResume() {

@@ -66,3 +66,33 @@ internal fun openSelfStartPermission(context: Context) {
         }
     }
 }
+
+/**
+ * Opens the TV's own launcher, for an administrator who has made FluxTV the Home app and needs the
+ * app row or the TV's settings back. FluxTV has to name the other launcher explicitly: a plain Home
+ * intent would land on FluxTV again. False when the TV has no other launcher to open.
+ */
+internal fun openOtherLauncher(context: Context): Boolean {
+    val pm = context.packageManager
+    val homes = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+    val other = homes.firstOrNull { it.activityInfo.packageName != context.packageName } ?: return false
+    return try {
+        context.startActivity(
+            Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME)
+                .setClassName(other.activityInfo.packageName, other.activityInfo.name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+/** Opens Android's screen for choosing the default Home app, where FluxTV is picked or dropped. */
+internal fun openHomeAppSettings(context: Context): Boolean = try {
+    context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    true
+} catch (_: Exception) {
+    false
+}

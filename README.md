@@ -125,6 +125,42 @@ is compiled when it is installed, so it doesn't need this:
 adb shell cmd package compile -m speed -f com.fluxtv.app
 ```
 
+### After a force-stop
+
+Force-stopping FluxTV (Settings → Apps → Force stop) leaves it in Android's *stopped* state, and that
+state is not cleared by a reboot: the app gets no boot signal, has no process to hear a wake, and a
+wake from standby does not send Home either, so nothing inside FluxTV can bring it back. Two things
+outside the app's own process can:
+
+- **Make FluxTV the Home app.** FluxTV registers as a launcher, so **Settings → Preferences → Choose
+  Home app** can select it. Android itself starts the Home app at boot and on the Home key, which also
+  takes a force-stopped FluxTV out of the stopped state. **Open the TV's own launcher** on the same
+  screen is the way back to the app row and the TV's settings. By adb:
+
+  ```bash
+  adb shell cmd package set-home-activity com.fluxtv.app/.MainActivity
+  ```
+
+  This covers a restart and the Home key. It does not cover a wake: the TV returns to whatever app was
+  last on screen, and Android sends no Home.
+
+- **Shizuku, for the wake.** If [Shizuku](https://shizuku.rikka.app/) is running on the TV, FluxTV asks
+  it to run a small helper (`WakeDaemon`) in a process of its own, as the shell user. A force-stop of
+  FluxTV does not touch that process. It checks the screen state twice a second, and when the TV wakes
+  while FluxTV has no process it starts FluxTV the way `adb shell am start` does. While FluxTV is
+  running, `StandbyWatcher` does this and the helper stays out of the way. **Settings → Preferences**
+  shows *Allow FluxTV to use Shizuku* (once, in Shizuku's own dialog) and then *Shizuku helper active*;
+  the Diagnostics history records `Shizuku helper running` and, after a wake that needed it,
+  `The TV woke while FluxTV was not running: the Shizuku helper started it`.
+
+  The helper lives as long as Shizuku does. On a TV that is not rooted, Shizuku has to be started again
+  after each restart (Android 9: from a computer over adb), and until then only the Home app covers a
+  boot. FluxTV starts the helper again as soon as it runs with Shizuku up, and an app update replaces
+  it, so the helper never runs old code. If Shizuku shows FluxTV as not allowed after an update, switch
+  it off and on in Shizuku's list (or press the Settings button again).
+
+  Without Shizuku, FluxTV behaves exactly as before.
+
 ## Standby and the picture
 
 Going into standby takes the video surface away from FluxTV, and a decoder that was playing cannot be

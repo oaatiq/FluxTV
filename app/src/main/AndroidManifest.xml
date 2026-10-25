@@ -45,7 +45,31 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!--
+                Lets FluxTV be chosen as the TV's Home app. Android itself starts the Home app at
+                boot and restarts it when it is killed, which also brings back an app that was
+                force-stopped: a stopped app receives no BOOT_COMPLETED and has no process to hear
+                a wake, so nothing inside FluxTV can recover from that.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <!--
+            Lets Shizuku, when it runs on the TV, hand FluxTV its connection (see ShizukuWake). FluxTV
+            works the same without it; with it, FluxTV can start itself on a wake from standby even
+            after it was force-stopped. The permission keeps ordinary apps away from this provider.
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!--
             Starts FluxTV into live TV after the TV boots (preference-controlled). Android hands

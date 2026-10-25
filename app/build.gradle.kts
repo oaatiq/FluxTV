@@ -84,6 +84,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

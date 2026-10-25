@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,8 +34,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.FluxTvApplication
+import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
+import com.fluxtv.app.openHomeAppSettings
+import com.fluxtv.app.openOtherLauncher
 import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
@@ -277,6 +282,41 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
                 style = TextStyle(color = FluxMuted, fontSize = 18.sp)
             )
             FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
+        }
+
+        // A force-stopped app is not run again by a wake. Where Shizuku runs on the TV, FluxTV can have
+        // a helper that outlives it; without Shizuku there is nothing to show.
+        val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
+        val shizukuState by shizuku.state.collectAsState()
+        when (shizukuState) {
+            ShizukuWake.State.NOT_RUNNING -> Unit
+            ShizukuWake.State.NEEDS_PERMISSION -> {
+                BasicText(
+                    "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also start by " +
+                        "itself when the TV wakes after it was force-stopped.",
+                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+                )
+                FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
+            }
+            ShizukuWake.State.STARTING -> BasicText(
+                "Starting the Shizuku helper…",
+                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+            )
+            ShizukuWake.State.ACTIVE -> BasicText(
+                "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
+                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+            )
+        }
+
+        // Android restarts the Home app by itself, even after a force-stop, so making FluxTV the Home
+        // app is what keeps it coming up. The second button is the way back to the TV's launcher.
+        BasicText(
+            "To make sure FluxTV always comes up, even after it was force-stopped, make it the Home app.",
+            style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FluxButton("Choose Home app") { openHomeAppSettings(context) }
+            FluxButton("Open the TV's own launcher") { openOtherLauncher(context) }
         }
 
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
