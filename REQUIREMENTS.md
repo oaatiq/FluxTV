@@ -93,7 +93,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-NET-001..006** — `NetworkMonitor` classifies connectivity; auto-reconnect without restart;
   per-channel failures isolated. Recovery only plays while FluxTV is on screen.
 - **REQ-REL-001..008** — exceptions swallowed in data/cache layers; single reused ExoPlayer; config
-  in DataStore/JSON survives crashes & updates.
+  in DataStore/JSON survives crashes & updates; an unreadable settings file is replaced with defaults
+  instead of crashing every start.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
   "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`).
 

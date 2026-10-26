@@ -2,17 +2,29 @@ package com.fluxtv.app.data.settings
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "flux_settings")
+/**
+ * A settings file that cannot be parsed (failing flash, a power cut at the wrong moment) made every
+ * read throw, so FluxTV crashed at every start. It is replaced with empty settings instead: FluxTV
+ * then opens Settings to be set up again, which is the most it can do with a file that is gone.
+ */
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "flux_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 /**
  * All persisted preferences. Stored in DataStore, which survives app restarts and updates
@@ -50,7 +62,10 @@ class SettingsRepository(private val context: Context) {
         val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
     }
 
-    val settings: Flow<FluxSettings> = context.dataStore.data.map { p ->
+    // A file that cannot be read at all reads as the defaults, rather than throwing in every caller.
+    val settings: Flow<FluxSettings> = context.dataStore.data.catch { e ->
+        if (e is IOException) emit(emptyPreferences()) else throw e
+    }.map { p ->
         FluxSettings(
             playlistUrl = p[Keys.PLAYLIST_URL],
             playlistName = p[Keys.PLAYLIST_NAME],
