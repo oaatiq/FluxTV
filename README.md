@@ -54,6 +54,14 @@ it is installed:
 The release build is signed with the debug key (see `app/build.gradle.kts`), so it updates an existing
 debug install in place and keeps your settings. It is not debuggable, so `adb shell run-as` won't work on it.
 
+The release build also goes through R8, which shrinks and optimizes the code. Class names are left
+as they are, so crashes in `adb logcat` read the same as in a debug build. R8 removes code it cannot
+see being used, so anything Android or Shizuku creates by name needs a rule in `app/proguard-rules.pro`
+(the Shizuku wake helper has one). After changing those rules, or adding a library that loads classes
+by name, check a release build on the TV: a channel plays, Settings opens, and with Shizuku running,
+**Settings → Preferences** reaches *Shizuku helper active*. `tools/power-cycle-test.sh` covers the
+standby cases.
+
 ### Install on an Android TV box
 
 ```bash

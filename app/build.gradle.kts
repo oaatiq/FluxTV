@@ -27,7 +27,11 @@ android {
             // faster to draw than debug on the MiTV and is compiled ahead of time when installed.
             // Use a real keystore here before publishing anywhere.
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
+            // R8 shrinks and optimizes the release build; Compose expects it in a release build and is
+            // slower without it. proguard-rules.pro keeps what Android or Shizuku create by name.
+            // Test a release build on the TV after changing those rules (see README → Build).
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
