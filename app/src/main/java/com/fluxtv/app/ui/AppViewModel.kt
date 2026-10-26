@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,10 +41,20 @@ enum class BrowsePane { CATEGORIES, CHANNELS }
 const val BROWSE_FAVORITES = "\u0000favorites"
 const val BROWSE_ALL = "\u0000all"
 
+/**
+ * The real categories (playlist groups) of [sorted], in the order they first appear, each with its
+ * channels. Worked out once per playlist change, off the main thread, rather than by the channel
+ * list each time it opens.
+ */
+private fun groupsOf(sorted: List<Channel>): Map<String, List<Channel>> =
+    sorted.filter { !it.group.isNullOrBlank() }.groupBy { it.group!! }
+
 data class UiState(
     val mode: AppMode = AppMode.STARTING,
     val overlay: EasyOverlay = EasyOverlay.NONE,
     val channels: List<Channel> = emptyList(),
+    /** The playlist's categories in first-appearance order, each with its channels (see [groupsOf]). */
+    val groups: Map<String, List<Channel>> = emptyMap(),
     val favorites: Set<String> = emptySet(),
     val favoritesOnly: Boolean = false,
     val currentChannel: Channel? = null,
@@ -88,6 +100,7 @@ class AppViewModel(
     val controller: FluxPlayerController get() = container.playerController
 
     private var bannerJob: Job? = null
+    private var lastChannelJob: Job? = null
     private var numberJob: Job? = null
     private var transientJob: Job? = null
     private var currentChannelId: String? = null
@@ -99,14 +112,17 @@ class AppViewModel(
     init {
         container.networkMonitor.start()
         viewModelScope.launch {
-            container.channelRepository.channels.collect { chs ->
-                val sorted = chs.sortedBy { c -> c.number }
-                // The channel on screen keeps up with the playlist: a refresh can move it to a new
-                // address, which retries and re-tunes should then use.
-                val current = _state.value.currentChannel?.let { cur -> sorted.firstOrNull { it.stableId == cur.stableId } }
-                _state.update { it.copy(channels = sorted, currentChannel = current ?: it.currentChannel) }
-                current?.let { container.playerController.updateChannel(it) }
-            }
+            container.channelRepository.channels
+                // Sorting and grouping tens of thousands of channels is kept off the main thread.
+                .map { chs -> chs.sortedBy { c -> c.number }.let { sorted -> sorted to groupsOf(sorted) } }
+                .flowOn(Dispatchers.Default)
+                .collect { (sorted, groups) ->
+                    // The channel on screen keeps up with the playlist: a refresh can move it to a new
+                    // address, which retries and re-tunes should then use.
+                    val current = _state.value.currentChannel?.let { cur -> sorted.firstOrNull { it.stableId == cur.stableId } }
+                    _state.update { it.copy(channels = sorted, groups = groups, currentChannel = current ?: it.currentChannel) }
+                    current?.let { container.playerController.updateChannel(it) }
+                }
         }
         viewModelScope.launch {
             container.channelRepository.lastUpdatedMs.collect { t -> _state.update { it.copy(lastUpdatedMs = t) } }
@@ -166,7 +182,7 @@ class AppViewModel(
                 }
             }
 
-            val sorted = container.channelRepository.channels.value.sortedBy { it.number }
+            val sorted = withContext(Dispatchers.Default) { container.channelRepository.channels.value.sortedBy { it.number } }
             val lineup = if (s.favoritesOnly) sorted.filter { it.stableId in s.favorites } else sorted
 
             // Settings may have been opened during a long first load; it is left open.
@@ -178,10 +194,25 @@ class AppViewModel(
 
             // Started from the cache: pick up provider updates in the background. After a first load
             // the playlist has just been fetched, and is not fetched twice.
-            if (startedFromCache) {
-                launch { container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName) }
-            }
+            if (startedFromCache) launch { refreshAfterStart(s) }
         }
+    }
+
+    /**
+     * The start-up refresh. It no longer runs the moment the first channel is tuned: the download and
+     * the parse took the network and the CPU from that channel's start on a weak box. A cache younger
+     * than the refresh interval is left to the periodic job; an older one is refreshed once the
+     * channel plays (or has had a minute to), and a little after.
+     */
+    private suspend fun refreshAfterStart(s: FluxSettings) {
+        val ageMs = System.currentTimeMillis() - container.channelRepository.lastUpdatedMs.value
+        // A TV's clock can be wrong until it has synced after power-on: an age below zero is unknown.
+        if (ageMs in 0 until s.refreshIntervalHours * HOUR_MS) return
+        withTimeoutOrNull(FIRST_PLAY_WAIT_MS) {
+            container.playerController.status.first { it.phase == PlaybackPhase.PLAYING }
+        }
+        delay(STARTUP_REFRESH_DELAY_MS)
+        container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
     }
 
     // ---------- tuning ----------
@@ -199,11 +230,25 @@ class AppViewModel(
             )
         }
         container.playerController.playChannel(channel)
-        viewModelScope.launch { container.settingsRepository.setLastChannel(channel.stableId) }
+        saveLastChannel(LAST_CHANNEL_SAVE_DELAY_MS)
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {
             delay(4500)
             _state.update { it.copy(showInfoBanner = false) }
+        }
+    }
+
+    /**
+     * Remembers the current channel for the next start, after [delayMs]. Saved straight away on every
+     * zap, each step through the channels rewrote (and synced) the settings file and sent the
+     * settings round the app again; a channel only zapped past is not worth either.
+     */
+    private fun saveLastChannel(delayMs: Long) {
+        val id = currentChannelId ?: return
+        lastChannelJob?.cancel()
+        lastChannelJob = viewModelScope.launch {
+            delay(delayMs)
+            container.settingsRepository.setLastChannel(id)
         }
     }
 
@@ -420,6 +465,9 @@ class AppViewModel(
         resumed = false
         if (_state.value.currentChannel != null) retuneWhenOnScreen = true
         container.playerController.onStop()
+        // Standby can be followed by the power going off: a channel still waiting to be saved is
+        // saved now.
+        if (lastChannelJob?.isActive == true) saveLastChannel(0)
     }
 
     /** The video surface has been (re)created, so the player has somewhere to put the picture. */
@@ -487,6 +535,15 @@ class AppViewModel(
     companion object {
         /** How long a first playlist download holds the start-up screen before Easy Mode opens. */
         private const val FIRST_LOAD_WAIT_MS = 20_000L
+
+        /** The start-up refresh waits this long for the first channel to play, then this much more. */
+        private const val FIRST_PLAY_WAIT_MS = 60_000L
+        private const val STARTUP_REFRESH_DELAY_MS = 30_000L
+
+        private const val HOUR_MS = 3_600_000L
+
+        /** How long a channel has to stay on before it is remembered for the next start. */
+        private const val LAST_CHANNEL_SAVE_DELAY_MS = 3_000L
 
         fun factory(app: FluxTvApplication) = viewModelFactory {
             initializer { AppViewModel(app, app.container) }

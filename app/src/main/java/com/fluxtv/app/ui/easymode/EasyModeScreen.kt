@@ -70,6 +70,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
             InstantScroll {
                 ChannelListOverlay(
                     allChannels = state.channels,
+                    byGroup = state.groups,
                     favorites = state.favorites,
                     currentId = state.currentChannel?.stableId,
                     startKey = state.browseStartKey,

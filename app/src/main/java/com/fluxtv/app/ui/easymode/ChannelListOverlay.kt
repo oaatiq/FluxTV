@@ -96,6 +96,7 @@ private const val PREVIEW_DELAY_MS = 140L
 @Composable
 fun ChannelListOverlay(
     allChannels: List<Channel>,
+    byGroup: Map<String, List<Channel>>,
     favorites: Set<String>,
     currentId: String?,
     startKey: String,
@@ -104,10 +105,8 @@ fun ChannelListOverlay(
     onSelect: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit
 ) {
-    // First-appearance (playlist) order of the real categories.
-    val byGroup = remember(allChannels) {
-        allChannels.filter { !it.group.isNullOrBlank() }.groupBy { it.group!! }
-    }
+    // byGroup: the real categories in first-appearance order, grouped by the view model when the
+    // playlist changes rather than here, on the main thread, every time the list opens.
     val favoriteCount = remember(allChannels, favorites) { allChannels.count { it.stableId in favorites } }
     val entries = remember(byGroup, allChannels.size, favoriteCount) {
         buildList {

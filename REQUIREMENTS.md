@@ -14,7 +14,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 ## 4. Startup
 - **REQ-START-001/002** — `AppViewModel.start()` enters EASY and restores
   `settings.lastChannelStableId`. If FluxTV is covered or left before that first tune, the channel is
-  tuned once FluxTV is back on screen, never played behind another app.
+  tuned once FluxTV is back on screen, never played behind another app. A channel is remembered as
+  the last one once it has been on for 3 s (or FluxTV leaves the screen), not at every zap.
 - **REQ-START-003** — no profile/playlist/engine/quality prompts; startup is automatic.
 - **REQ-START-004** — instant start from `PlaylistCache`; modest player pre-roll in `PlayerFactory`.
 - **REQ-START-005/006** — `ui/startup/StartingScreen.kt` (calm, non-technical, auto-dismissed).
@@ -110,8 +111,10 @@ added **Hardware resource utilization** section) is met in this implementation.
 ## 18. Performance
 - **REQ-PERF-001/002** — immediate key feedback; overlays are plain Compose state toggles.
 - **REQ-PERF-003/004** — single reused player; cached playlist for fast start.
-- **REQ-PERF-005/007** — background refresh via WorkManager; UI stays responsive while loading.
-- **REQ-PERF-006/008** — virtualised lists; one player instance avoids leak/stutter growth.
+- **REQ-PERF-005/007** — background refresh via WorkManager; UI stays responsive while loading. The
+  start-up refresh waits for the first channel to play, and is skipped while the cache is fresh.
+- **REQ-PERF-006/008** — virtualised lists, sorted and grouped off the main thread; one player
+  instance, and the video view detached from it when it leaves the screen, avoid leak/stutter growth.
 
 ## 19. Device adaptability
 - **REQ-DEV-001/002** — ExoPlayer/track selector use device capabilities and degrade gracefully.
