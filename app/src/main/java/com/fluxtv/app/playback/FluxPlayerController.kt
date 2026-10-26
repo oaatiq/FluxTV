@@ -2,10 +2,12 @@ package com.fluxtv.app.playback
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
@@ -62,6 +64,9 @@ class FluxPlayerController(
     private var droppedFramesTotal = 0
     private var lastVideoDecoder: String? = null
 
+    /** Whether this start of the channel has had its one retry after a decoder error. */
+    private var decoderRetried = false
+
     private var retryJob: Job? = null
     private var bufferingWatchdog: Job? = null
     private var slowRetryJob: Job? = null
@@ -111,6 +116,7 @@ class FluxPlayerController(
         currentChannel = channel
         onScreen = true
         recovery.reset()
+        decoderRetried = false
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -144,6 +150,7 @@ class FluxPlayerController(
     fun retryNow() {
         slowRetryJob?.cancel()
         recovery.reset()
+        decoderRetried = false
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         reprepareCurrent("manual retry")
     }
@@ -259,13 +266,37 @@ class FluxPlayerController(
         p.playWhenReady = onScreen
         true
     } catch (e: RuntimeException) {
-        // setMediaItem threw before replacing anything: stop the previous channel rather than leave it
-        // playing under this one's name.
-        p.stop()
+        // setMediaItem threw before replacing anything: cannotPlay() stops the previous channel rather
+        // than leave it playing under this one's name.
         bundle?.channelSwitch?.pending = false
-        logEvent("error", "Cannot open ${channel.name}: $e")
-        updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true)
+        cannotPlay("cannot open this stream type: $e")
         false
+    }
+
+    /** The channel cannot play on this TV at all: stop it and say so once, without retrying it. */
+    private fun cannotPlay(reason: String) {
+        retryJob?.cancel()
+        bufferingWatchdog?.cancel()
+        slowRetryJob?.cancel()
+        stabilityJob?.cancel()
+        bundle?.player?.stop()
+        logEvent("error", "Cannot play ${currentChannel?.name}: $reason")
+        updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true)
+    }
+
+    /**
+     * A decoder error gets one more try, a moment later and without a message, before the channel
+     * is declared unplayable: a TV's hardware decoder can still be held by whatever used it last
+     * (just after a boot or a wake, or a quick zap) and be free again a second later.
+     */
+    private fun retryDecoderOnce() {
+        decoderRetried = true
+        updateStatus(PlaybackPhase.RECOVERING, message = null, prompt = false)
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            delay(DECODER_RETRY_DELAY_MS)
+            reprepareCurrent("decoder error, trying once more")
+        }
     }
 
     private fun scheduleRetry(message: String, reason: String) {
@@ -333,6 +364,7 @@ class FluxPlayerController(
         stabilityJob?.cancel()
         stabilityJob = scope.launch {
             delay(STABLE_PLAYBACK_MS)
+            decoderRetried = false
             if (recovery.attempt > 0) {
                 recovery.reset()
                 updateStatus(_status.value.phase, _status.value.userMessage, _status.value.showRecoveryPrompt)
@@ -456,10 +488,23 @@ class FluxPlayerController(
             val hasNetwork = networkMonitor.hasNetwork()
             val mapped = ErrorMapper.map(error, hasNetwork)
             logEvent("error", mapped.technical)
-            if (mapped.recoverable) {
-                scheduleRetry(mapped.userMessage, mapped.technical)
-            } else {
-                updateStatus(PlaybackPhase.FAILED, mapped.userMessage, prompt = true)
+            when {
+                mapped.recoverable -> scheduleRetry(mapped.userMessage, mapped.technical)
+                mapped.kind == ErrorKind.DECODER && !decoderRetried -> retryDecoderOnce()
+                else -> updateStatus(PlaybackPhase.FAILED, mapped.userMessage, prompt = true)
+            }
+        }
+
+        override fun onTracksChanged(tracks: Tracks) {
+            if (tracks.isEmpty) return
+            val video = tracks.isTypeSupported(C.TRACK_TYPE_VIDEO, /* allowExceedsCapabilities = */ true)
+            val audio = tracks.isTypeSupported(C.TRACK_TYPE_AUDIO, /* allowExceedsCapabilities = */ true)
+            if (!video && !audio) {
+                // DRM-protected (FluxTV has no DRM) or only in formats this TV cannot decode. The
+                // player need not raise an error for that and may just show nothing, so FluxTV says it.
+                cannotPlay("nothing in this stream that this TV can play (DRM-protected, or unsupported formats)")
+            } else if (!video && tracks.containsType(C.TRACK_TYPE_VIDEO)) {
+                logEvent("decoder", "This TV cannot decode the picture of ${currentChannel?.name}: sound only")
             }
         }
 
@@ -552,5 +597,8 @@ class FluxPlayerController(
 
         /** How long playback that had started may stay buffering before it is prepared again (REQ-BUF-003). */
         const val STALL_TIMEOUT_MS = 8_000L
+
+        /** The pause before the one retry a decoder error gets, for the decoder to be let go. */
+        const val DECODER_RETRY_DELAY_MS = 1_500L
     }
 }

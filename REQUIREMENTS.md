@@ -96,7 +96,8 @@ added **Hardware resource utilization** section) is met in this implementation.
   in DataStore/JSON survives crashes & updates; an unreadable settings file is replaced with defaults
   instead of crashing every start.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
-  "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`).
+  "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`). A channel that cannot
+  play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried.
 
 ## 18. Performance
 - **REQ-PERF-001/002** — immediate key feedback; overlays are plain Compose state toggles.
@@ -128,8 +129,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   automatically; no Viewer configuration.
 - **REQ-HW-003** — `DefaultTrackSelector` only chooses renditions the device can decode (codec,
   profile, resolution, frame rate).
-- **REQ-HW-004** — `setEnableDecoderFallback(true)` permits a controlled software fallback; if all
-  decoders fail the channel shows "Unable to play this channel."
+- **REQ-HW-004** — `setEnableDecoderFallback(true)` permits a controlled software fallback; a decoder
+  error gets one retry a moment later, and if all decoders fail the channel shows "Unable to play
+  this channel." A software decoder is not carried to the next channel, which tries hardware again.
 - **REQ-HW-005** — hardware decode + a single reused player keep CPU/RAM low for responsiveness.
 - **REQ-HW-006** — Diagnostics shows **Hardware/Software (decoder name)** and logs any
   hardware→software fallback (`FluxPlayerController.onVideoDecoderInitialized`).

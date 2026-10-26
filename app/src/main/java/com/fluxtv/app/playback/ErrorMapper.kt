@@ -2,7 +2,7 @@ package com.fluxtv.app.playback
 
 import androidx.media3.common.PlaybackException
 
-enum class ErrorKind { NETWORK, SOURCE, DECODER, NO_NETWORK, UNKNOWN }
+enum class ErrorKind { NETWORK, SOURCE, DECODER, DRM, NO_NETWORK, UNKNOWN }
 
 data class MappedError(
     val kind: ErrorKind,
@@ -52,6 +52,19 @@ object ErrorMapper {
             PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
             PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
                 MappedError(ErrorKind.DECODER, CANNOT_PLAY, recoverable = false, technical = technical)
+
+            // FluxTV has no DRM, so a protected channel will not play however often it is retried;
+            // these used to fall through to "temporarily unavailable" and be retried forever.
+            PlaybackException.ERROR_CODE_DRM_UNSPECIFIED,
+            PlaybackException.ERROR_CODE_DRM_SCHEME_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED,
+            PlaybackException.ERROR_CODE_DRM_CONTENT_ERROR,
+            PlaybackException.ERROR_CODE_DRM_LICENSE_ACQUISITION_FAILED,
+            PlaybackException.ERROR_CODE_DRM_DISALLOWED_OPERATION,
+            PlaybackException.ERROR_CODE_DRM_SYSTEM_ERROR,
+            PlaybackException.ERROR_CODE_DRM_DEVICE_REVOKED,
+            PlaybackException.ERROR_CODE_DRM_LICENSE_EXPIRED ->
+                MappedError(ErrorKind.DRM, CANNOT_PLAY, recoverable = false, technical = technical)
 
             else ->
                 MappedError(ErrorKind.UNKNOWN, CHANNEL_UNAVAILABLE, recoverable = true, technical = technical)

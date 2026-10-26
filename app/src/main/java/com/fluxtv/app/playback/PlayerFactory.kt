@@ -108,7 +108,8 @@ class ChannelSwitchSignal {
  * The MiTV's MStar decoder (OMX.MS.AVC.Decoder) then keeps its old output scaling, so after zapping
  * from a larger stream to a smaller one the picture comes out zoomed in. Refusing to reuse the codec
  * when a channel switch changes the resolution makes ExoPlayer build a fresh one. Same-resolution zaps
- * still reuse it and stay fast, and resolution changes inside one stream are left alone.
+ * still reuse it and stay fast, and resolution changes inside one stream are left alone. A software
+ * decoder (the fallback when the hardware one failed to start) is never carried to the next channel.
  *
  * Extension renderers are switched off for this app, so the video renderer is the only one added here.
  */
@@ -144,21 +145,26 @@ private class FreshCodecOnChannelSwitchRenderersFactory(
                     newFormat: Format
                 ): DecoderReuseEvaluation {
                     val evaluation = super.canReuseCodec(codecInfo, oldFormat, newFormat)
-                    val resolutionChanged = oldFormat.width != newFormat.width || oldFormat.height != newFormat.height
-                    val switchingChannel = channelSwitch.pending
-                    return if (switchingChannel && resolutionChanged &&
-                        evaluation.result != DecoderReuseEvaluation.REUSE_RESULT_NO
-                    ) {
-                        DecoderReuseEvaluation(
-                            codecInfo.name,
-                            oldFormat,
-                            newFormat,
-                            DecoderReuseEvaluation.REUSE_RESULT_NO,
-                            DecoderReuseEvaluation.DISCARD_REASON_VIDEO_RESOLUTION_CHANGED
-                        )
-                    } else {
-                        evaluation
+                    if (!channelSwitch.pending || evaluation.result == DecoderReuseEvaluation.REUSE_RESULT_NO) {
+                        return evaluation
                     }
+                    val discardReason = when {
+                        oldFormat.width != newFormat.width || oldFormat.height != newFormat.height ->
+                            DecoderReuseEvaluation.DISCARD_REASON_VIDEO_RESOLUTION_CHANGED
+                        // A software decoder usually means the hardware one failed to start (often
+                        // because it was still busy); kept, it would decode every channel after it on
+                        // the CPU. A new channel builds a fresh one, which tries hardware first. Where
+                        // a format only has a software decoder, that costs one decoder start per zap.
+                        codecInfo.softwareOnly -> DecoderReuseEvaluation.DISCARD_REASON_APP_OVERRIDE
+                        else -> return evaluation
+                    }
+                    return DecoderReuseEvaluation(
+                        codecInfo.name,
+                        oldFormat,
+                        newFormat,
+                        DecoderReuseEvaluation.REUSE_RESULT_NO,
+                        discardReason
+                    )
                 }
             }
         )
