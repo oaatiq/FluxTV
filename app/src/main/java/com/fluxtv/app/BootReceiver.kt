@@ -61,6 +61,8 @@ class BootReceiver : BroadcastReceiver() {
                     else -> "$signal: FluxTV is already on screen"
                 }
                 container.diagnosticsStore.append(BootTrace.event(message))
+                // The process may be let go once the receiver finishes, so the line is written first.
+                container.diagnosticsStore.flush()
             } finally {
                 pending.finish()
             }

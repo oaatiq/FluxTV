@@ -110,7 +110,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 20–24. Errors, diagnostics, config protection, updates, security
 - **§20** — `ErrorMapper` produces the exact Viewer-facing sentences; technical text kept for admin.
-- **REQ-DIA-001..004** — admin-only Diagnostics screen + persisted `DiagnosticsStore` history.
+- **REQ-DIA-001..004** — admin-only Diagnostics screen + persisted `DiagnosticsStore` history, kept in
+  memory and saved one appended line per event (the file is compacted at twice its 300-event cap).
 - **REQ-CFG-001..005** — admin behind hold-OK/MENU and optional PIN; no config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
 - **REQ-SEC-001..005** — credentials never shown to the Viewer; minimal permissions (INTERNET,

@@ -45,7 +45,7 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
         override fun onReceive(context: Context, intent: Intent) {
             val action = intent.action ?: return
             when (action) {
-                Intent.ACTION_SCREEN_OFF -> log("Screen off")
+                Intent.ACTION_SCREEN_OFF -> record("Screen off")
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> onWake(action)
             }
         }
@@ -67,7 +67,7 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
         val signal = action.substringAfterLast('.')
 
         if (isFluxTvOnScreen()) {
-            log("$signal: FluxTV is already on screen")
+            record("$signal: FluxTV is already on screen")
             return
         }
         scope.launch {
@@ -99,14 +99,12 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
         }
     }
 
-    /** Appends on the calling thread, so several lines from one wake stay in the order they happened. */
+    /**
+     * Adds a line to the history. It does not wait for the disk, so the broadcast thread may call it
+     * too, and lines from one thread keep the order they were recorded in.
+     */
     private fun record(message: String) {
         container.diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), null, "wake", message))
-    }
-
-    /** For the broadcast thread, which must not wait on a file write. */
-    private fun log(message: String) {
-        scope.launch { record(message) }
     }
 
     private companion object {

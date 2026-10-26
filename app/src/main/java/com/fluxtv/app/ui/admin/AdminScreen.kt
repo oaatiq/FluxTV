@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
@@ -338,9 +339,6 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
     var reachability by remember { mutableStateOf<String?>(null) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
-    // The boot and wake receivers write history straight to the store, so pick up anything the
-    // player has not seen.
-    LaunchedEffect(Unit) { vm.reloadDiagnosticsEvents() }
     // Buffer, bandwidth and dropped frames otherwise only refresh on playback state changes.
     LaunchedEffect(Unit) {
         while (true) {
@@ -348,7 +346,9 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
             delay(1_000)
         }
     }
-    val d = state.diagnostics
+    // Read from the player directly rather than through UiState, which would change with them.
+    val d by vm.controller.diagnostics.collectAsStateWithLifecycle()
+    val events by vm.controller.events.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle("Diagnostics")
@@ -383,7 +383,7 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
 
         BasicText("History", style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold))
         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-            items(state.diagnosticsEvents.reversed()) { event ->
+            items(events.reversed()) { event ->
                 Column(Modifier.padding(vertical = 4.dp)) {
                     BasicText(
                         "${formatTime(event.timestampMs)}  [${event.category}]  ${event.channelName ?: ""}",

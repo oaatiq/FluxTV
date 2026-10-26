@@ -73,8 +73,8 @@ class FluxPlayerController(
     private val _diagnostics = MutableStateFlow(DiagnosticsSnapshot())
     val diagnostics: StateFlow<DiagnosticsSnapshot> = _diagnostics.asStateFlow()
 
-    private val _events = MutableStateFlow<List<DiagnosticsEvent>>(emptyList())
-    val events: StateFlow<List<DiagnosticsEvent>> = _events.asStateFlow()
+    /** The diagnostics history, including the lines the boot and wake receivers add themselves. */
+    val events: StateFlow<List<DiagnosticsEvent>> = diagnosticsStore.events
 
     private val _videoFrameRate = MutableStateFlow(0f)
     val videoFrameRate: StateFlow<Float> = _videoFrameRate.asStateFlow()
@@ -83,7 +83,6 @@ class FluxPlayerController(
     val playerReady: StateFlow<Boolean> = _playerReady.asStateFlow()
 
     init {
-        scope.launch(Dispatchers.IO) { _events.value = diagnosticsStore.load() }
         scope.launch {
             networkMonitor.status.collect { status ->
                 if (status == NetworkStatus.AVAILABLE) onNetworkRestored()
@@ -211,17 +210,8 @@ class FluxPlayerController(
         logEvent("standby", "Back on screen with a new video surface: re-tuning ${currentChannel?.name}")
     }
 
-    /**
-     * Re-reads the history from disk. The boot and standby-wake receivers append to the store
-     * without going through this controller, so their lines can be newer than the list held here.
-     */
-    fun reloadEvents() {
-        scope.launch(Dispatchers.IO) { _events.value = diagnosticsStore.load() }
-    }
-
     fun clearDiagnostics() {
         diagnosticsStore.clear()
-        _events.value = emptyList()
     }
 
     // ---- internals ----
@@ -384,8 +374,7 @@ class FluxPlayerController(
     }
 
     private fun logEvent(category: String, message: String) {
-        val event = DiagnosticsEvent(System.currentTimeMillis(), currentChannel?.name, category, message)
-        scope.launch(Dispatchers.IO) { _events.value = diagnosticsStore.append(event) }
+        diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), currentChannel?.name, category, message))
     }
 
     /** Re-reads the live figures (buffer, bandwidth, state); the Diagnostics page calls this once a second. */

@@ -8,8 +8,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.fluxtv.app.AppContainer
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.data.model.Channel
-import com.fluxtv.app.data.model.DiagnosticsEvent
-import com.fluxtv.app.data.model.DiagnosticsSnapshot
 import com.fluxtv.app.data.repository.RefreshOutcome
 import com.fluxtv.app.data.settings.FluxSettings
 import com.fluxtv.app.playback.FluxPlayerController
@@ -54,8 +52,6 @@ data class UiState(
     val browsePane: BrowsePane = BrowsePane.CHANNELS,
     val settings: FluxSettings = FluxSettings(),
     val startupMessage: String = "Starting television…",
-    val diagnostics: DiagnosticsSnapshot = DiagnosticsSnapshot(),
-    val diagnosticsEvents: List<DiagnosticsEvent> = emptyList(),
     val lastUpdatedMs: Long = 0L,
     val isRefreshing: Boolean = false,
     val lastRefreshMessage: String? = null
@@ -118,12 +114,9 @@ class AppViewModel(
         viewModelScope.launch {
             container.playerController.status.collect { st -> _state.update { it.copy(playback = st) } }
         }
-        viewModelScope.launch {
-            container.playerController.diagnostics.collect { d -> _state.update { it.copy(diagnostics = d) } }
-        }
-        viewModelScope.launch {
-            container.playerController.events.collect { e -> _state.update { it.copy(diagnosticsEvents = e) } }
-        }
+        // The diagnostics figures and history are not copied in here: they change many times per
+        // channel change, and every change would hand Easy Mode a new state for data only the
+        // Diagnostics screen shows. That screen collects them from the player itself.
         start()
     }
 
@@ -356,12 +349,7 @@ class AppViewModel(
 
     fun refreshDiagnostics() = container.playerController.refreshDiagnostics()
 
-    /** Picks up history written outside the player, i.e. the boot and wake receivers' lines. */
-    fun reloadDiagnosticsEvents() = container.playerController.reloadEvents()
-
-    fun clearDiagnostics() {
-        viewModelScope.launch(Dispatchers.IO) { container.playerController.clearDiagnostics() }
-    }
+    fun clearDiagnostics() = container.playerController.clearDiagnostics()
 
     suspend fun checkReachable(url: String): Boolean = withContext(Dispatchers.IO) {
         try {

@@ -108,8 +108,10 @@ wake() {
 
 history_tail() {
     # Readable with run-as on a debug build only; a release build keeps its files to itself.
+    # One JSON event per line; builds before that kept a single JSON array in diagnostics.json.
     local raw
-    raw=$(adbx exec-out run-as "$PKG" cat files/diagnostics.json 2>/dev/null)
+    raw=$(adbx exec-out run-as "$PKG" cat files/diagnostics.jsonl 2>/dev/null)
+    [ -z "$raw" ] && raw=$(adbx exec-out run-as "$PKG" cat files/diagnostics.json 2>/dev/null)
     if [ -z "$raw" ]; then
         echo "  (not readable — expected on a release build; use the logcat lines above,"
         echo "   or Settings -> Diagnostics -> History on the TV)"
@@ -118,8 +120,10 @@ history_tail() {
     if command -v python3 >/dev/null 2>&1; then
         printf '%s' "$raw" | python3 -c '
 import json, sys
+text = sys.stdin.read()
 try:
-    events = json.loads(sys.stdin.read())
+    events = json.loads(text) if text.lstrip().startswith("[") else \
+        [json.loads(l) for l in text.splitlines() if l.strip().endswith("}")]
 except Exception:
     print("  (unreadable JSON)"); sys.exit()
 for e in events[-14:]:
