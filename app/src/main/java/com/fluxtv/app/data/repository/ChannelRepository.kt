@@ -75,17 +75,33 @@ class ChannelRepository(
             }
         }
 
-    private fun stableId(e: M3uEntry): String =
-        if (!e.tvgId.isNullOrBlank()) "id:${e.tvgId}" else "u:" + sha1Hex("${e.name}|${e.url}")
+    /**
+     * The identity of [e] in this playlist, or null when it repeats an entry already in [taken]
+     * (REQ-PL-007).
+     *
+     * A tvg-id is an EPG key, not a channel key: providers often give the HD, FHD and SD versions of
+     * a channel the same one, and keying on it alone dropped every version but the first. The first
+     * entry with a tvg-id still gets "id:<tvg-id>", so the identities favorites, numbers and the last
+     * channel are stored under do not change; a later one with another name or address gets that id
+     * qualified by a hash of them. The same tvg-id, name and address again is a duplicate.
+     */
+    private fun stableId(e: M3uEntry, taken: MutableSet<String>): String? {
+        val nameAndUrl = sha1Hex("${e.name}|${e.url}")
+        if (e.tvgId.isNullOrBlank()) return "u:$nameAndUrl".takeIf { taken.add(it) }
+        // Registered for the first entry too, so that an exact repeat of it is recognised.
+        val variant = "id:${e.tvgId}|$nameAndUrl"
+        if (!taken.add(variant)) return null
+        val primary = "id:${e.tvgId}"
+        return if (taken.add(primary)) primary else variant
+    }
 
     private fun merge(old: List<Channel>, parsed: List<M3uEntry>): List<Channel> {
         val oldByStable = old.associateBy { it.stableId }
         var maxNumber = old.maxOfOrNull { it.number } ?: 0
-        val seen = HashSet<String>(parsed.size)
+        val taken = HashSet<String>(parsed.size * 2)
         val result = ArrayList<Channel>(parsed.size)
         for (e in parsed) {
-            val id = stableId(e)
-            if (!seen.add(id)) continue // REQ-PL-007: drop duplicates
+            val id = stableId(e, taken) ?: continue // REQ-PL-007: drop duplicates
             val number = e.tvgChno ?: oldByStable[id]?.number ?: (++maxNumber)
             if (number > maxNumber) maxNumber = number
             result.add(

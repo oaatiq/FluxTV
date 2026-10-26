@@ -60,8 +60,10 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action; one
   refresh runs at a time, and the playlist is parsed as it downloads, never held as one string.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
-- **REQ-PL-006/007** — tolerant parser skips malformed entries and de-duplicates.
-- **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash) preserve favorites & numbering on refresh.
+- **REQ-PL-006/007** — tolerant parser skips malformed entries; exact repeats (same tvg-id, name and
+  address) are dropped, while versions of a channel that share a tvg-id (HD, FHD, SD) are all kept.
+- **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash; a later channel with an already used tvg-id
+  gets both) preserve favorites & numbering on refresh.
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
