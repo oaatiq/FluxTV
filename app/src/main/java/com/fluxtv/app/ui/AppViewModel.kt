@@ -197,11 +197,19 @@ class AppViewModel(
         }
     }
 
-    /** Picked in the channel list: the channel already on screen just closes the list instead of restarting. */
+    /**
+     * Picked in the channel list: the channel already on screen just closes the list instead of
+     * restarting, and plays on if something had paused it (e.g. another app taking the sound).
+     */
     fun selectChannel(channel: Channel) {
         val phase = _state.value.playback.phase
         val showing = phase == PlaybackPhase.PLAYING || phase == PlaybackPhase.BUFFERING || phase == PlaybackPhase.PREPARING
-        if (channel.stableId == currentChannelId && showing) closeOverlay() else tuneTo(channel)
+        if (channel.stableId == currentChannelId && showing) {
+            closeOverlay()
+            container.playerController.onResume()
+        } else {
+            tuneTo(channel)
+        }
     }
 
     fun channelUp() = step(1)

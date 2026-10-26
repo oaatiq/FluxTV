@@ -73,6 +73,9 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
    last channel.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
+Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. A
+channel in a format FluxTV has no player for (RTSP, Smooth Streaming) shows *Unable to play this
+channel* rather than closing the app.
 
 ## Start when the TV turns on
 
@@ -187,7 +190,7 @@ right. It opens on the category of the channel you are watching, with that chann
 
 Back steps back like other IPTV players: watching → the channel list → the categories column → leave
 FluxTV. The last channel is remembered, so the next launch resumes it. Choosing the channel that is
-already playing just closes the list. **Home** also leaves (the app stays in the background), and **Settings** (hold OK,
+already playing just closes the list, and plays it on if something had paused it. **Home** also leaves (the app stays in the background), and **Settings** (hold OK,
 or MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
 
 ## Administrator / Settings

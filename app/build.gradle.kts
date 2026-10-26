@@ -74,6 +74,9 @@ dependencies {
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
+    // DASH (.mpd) channels are common in public playlists, the sample one included; without this
+    // module Media3 cannot open them at all.
+    implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.datasource.okhttp)

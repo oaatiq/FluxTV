@@ -79,7 +79,10 @@ object PlayerFactory {
             .setTrackSelector(trackSelector)
             .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(mediaSourceFactory)
-            .setHandleAudioBecomingNoisy(true)
+            // Off on purpose. Android counts HDMI among the outputs whose loss makes audio "noisy", so on
+            // a TV box, switching the TV off or to another input could pause live TV, which then stayed
+            // frozen with nothing on screen to start it again.
+            .setHandleAudioBecomingNoisy(false)
             .build()
             .apply {
                 setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)

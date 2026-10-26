@@ -47,6 +47,13 @@ class FluxPlayerController(
     private var currentChannel: Channel? = null
     private var maxVideoHeight = 0
 
+    /**
+     * Whether FluxTV is on screen to be watched: set by tuning and [onResume], cleared by [onPause]
+     * and [onStop]. Automatic recovery only starts playback while it is set, so a retry or a network
+     * coming back never plays a channel over Settings, another app, or a TV in standby.
+     */
+    private var onScreen = false
+
     private val recovery = RecoveryPolicy()
     private var lastLiveRejoinMs = -LIVE_REJOIN_MIN_GAP_MS
     private var prepareStartMs = 0L
@@ -103,6 +110,7 @@ class FluxPlayerController(
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
         currentChannel = channel
+        onScreen = true
         recovery.reset()
         bufferingEvents = 0
         droppedFramesTotal = 0
@@ -115,11 +123,8 @@ class FluxPlayerController(
         channel.referer?.let { headers["Referer"] = it }
         factory.setDefaultRequestProperties(headers)
 
-        bundle!!.channelSwitch.pending = true
-        p.setMediaItem(MediaItem.fromUri(channel.url))
-        p.prepare()
-        p.playWhenReady = true
-
+        // Reported before the player is handed the channel, so that a channel it cannot open at all
+        // ends on the failure that load() reports rather than on "preparing".
         _diagnostics.value = DiagnosticsSnapshot(
             channelName = channel.name,
             channelUrl = channel.url,
@@ -131,6 +136,9 @@ class FluxPlayerController(
         )
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         logEvent("startup", "Preparing ${channel.name} (${channel.url})")
+
+        bundle!!.channelSwitch.pending = true
+        if (load(p, channel)) startBufferingWatchdog(START_TIMEOUT_MS)
     }
 
     /** User pressed "Try again" on the recovery prompt (REQ-REC-005). Resets the budget. */
@@ -142,10 +150,18 @@ class FluxPlayerController(
     }
 
     fun onResume() {
-        bundle?.player?.let { if (currentChannel != null) it.play() }
+        onScreen = true
+        val p = bundle?.player ?: return
+        if (currentChannel == null) return
+        p.play()
+        // A stall the watchdog let pass while FluxTV was off screen gets its turn now.
+        if (p.playbackState == Player.STATE_BUFFERING && bufferingWatchdog?.isActive != true) {
+            startBufferingWatchdog()
+        }
     }
 
     fun onPause() {
+        onScreen = false
         bundle?.player?.pause()
     }
 
@@ -162,6 +178,7 @@ class FluxPlayerController(
      * edge once the new surface is in place, which also builds a fresh decoder for it.
      */
     fun onStop() {
+        onScreen = false
         val p = bundle?.player ?: return
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
@@ -219,6 +236,9 @@ class FluxPlayerController(
     }
 
     private fun onNetworkRestored() {
+        // Off screen (Settings, another app, standby) nobody is watching, and the way back re-tunes or
+        // retries anyway; re-preparing here started the channel's sound over whatever was on screen.
+        if (!onScreen) return
         val phase = _status.value.phase
         if (currentChannel != null && (phase == PlaybackPhase.RECOVERING || phase == PlaybackPhase.FAILED)) {
             slowRetryJob?.cancel()
@@ -234,9 +254,28 @@ class FluxPlayerController(
         recoveryCount++
         prepareStartMs = SystemClock.elapsedRealtime()
         logEvent("recovery", "Recovery attempt ${recovery.attempt} for ${channel.name}: $reason")
+        if (load(p, channel)) startBufferingWatchdog(START_TIMEOUT_MS)
+    }
+
+    /**
+     * Hands [channel] to the player. For a stream type this build has no module for (RTSP, Smooth
+     * Streaming), Media3 throws straight out of setMediaItem, which used to close the whole app on a
+     * channel change: such a channel is reported as one that cannot be played instead.
+     */
+    private fun load(p: ExoPlayer, channel: Channel): Boolean = try {
         p.setMediaItem(MediaItem.fromUri(channel.url))
         p.prepare()
-        p.playWhenReady = true
+        // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back.
+        p.playWhenReady = onScreen
+        true
+    } catch (e: RuntimeException) {
+        // setMediaItem threw before replacing anything: stop the previous channel rather than leave it
+        // playing under this one's name.
+        p.stop()
+        bundle?.channelSwitch?.pending = false
+        logEvent("error", "Cannot open ${channel.name}: $e")
+        updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true)
+        false
     }
 
     private fun scheduleRetry(message: String, reason: String) {
@@ -266,7 +305,7 @@ class FluxPlayerController(
             while (true) {
                 delay(30_000)
                 val channel = currentChannel ?: break
-                if (networkMonitor.hasNetwork()) {
+                if (onScreen && networkMonitor.hasNetwork()) {
                     logEvent("recovery", "Background auto-retry after outage for ${channel.name}")
                     recovery.reset()
                     reprepareCurrent("auto-retry after outage")
@@ -276,12 +315,19 @@ class FluxPlayerController(
         }
     }
 
-    private fun startBufferingWatchdog() {
+    /**
+     * Re-prepares a channel that is still buffering after [timeoutMs]. Every prepare arms it, not only
+     * the player reporting that it started buffering: Media3 reports no change when a channel is
+     * loaded while the player is already buffering (zapping on before the last channel started, or
+     * this watchdog's own retry), which left a channel that never started with no recovery at all.
+     */
+    private fun startBufferingWatchdog(timeoutMs: Long = STALL_TIMEOUT_MS) {
         bufferingWatchdog?.cancel()
         bufferingWatchdog = scope.launch {
-            delay(8_000)
+            delay(timeoutMs)
             val p = bundle?.player ?: return@launch
-            if (p.playbackState == Player.STATE_BUFFERING) {
+            // Off screen nobody is watching; onResume() arms it again if the stall is still there.
+            if (p.playbackState == Player.STATE_BUFFERING && onScreen) {
                 logEvent("buffering", "Prolonged buffering on ${currentChannel?.name}")
                 scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "prolonged buffering")
             }
@@ -318,6 +364,7 @@ class FluxPlayerController(
         logEvent("recovery", "Fell behind the live stream; rejoining the live edge")
         p.seekToDefaultPosition()
         p.prepare()
+        startBufferingWatchdog(START_TIMEOUT_MS)
         return true
     }
 
@@ -506,5 +553,15 @@ class FluxPlayerController(
 
         /** Minimum gap between silent live-edge rejoins before an error is treated as a real one. */
         const val LIVE_REJOIN_MIN_GAP_MS = 10_000L
+
+        /**
+         * How long a channel may take from a prepare to its first picture before it is prepared
+         * again. Longer than a stall: a slow server or a TV just out of boot needs a few seconds more
+         * to start, and restarting it then only throws that start away.
+         */
+        const val START_TIMEOUT_MS = 15_000L
+
+        /** How long playback that had started may stay buffering before it is prepared again (REQ-BUF-003). */
+        const val STALL_TIMEOUT_MS = 8_000L
     }
 }

@@ -64,14 +64,18 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash) preserve favorites & numbering on refresh.
 
 ## 11–13. Playback, buffering, adaptive streaming
-- **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/TS sources.
+- **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
+  type with no player module (RTSP, Smooth Streaming) reads "Unable to play this channel" instead of
+  closing the app (`FluxPlayerController.load`). Live TV never pauses itself when the audio output
+  changes (HDMI counts as one), and picking the channel already on screen plays it on.
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
   break the next.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
 - **REQ-PLAY-006 / REQ-BUF-004** — phases distinguish loading / transient / prolonged / failure in
   `FluxPlayerController`.
 - **REQ-BUF-001/002** — `DefaultLoadControl` 30–60s buffer, `prioritizeTimeOverSizeThresholds`.
-- **REQ-BUF-003** — short buffering shows no message; only an 8s watchdog escalates.
+- **REQ-BUF-003** — short buffering shows no message; only a watchdog escalates: 8 s for a stall,
+  15 s for a channel still starting, armed by every prepare.
 - **REQ-BUF-005/006/007** — automatic recovery, no Retry needed, bounded by `RecoveryPolicy`.
 - **REQ-BUF-008** — prolonged buffering → "Connection interrupted. Trying again…".
 - **REQ-ADP-001..006** — `DefaultTrackSelector` adaptive selection; continuity over quality;
@@ -85,7 +89,7 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 15–17. Network, reliability, recovery
 - **REQ-NET-001..006** — `NetworkMonitor` classifies connectivity; auto-reconnect without restart;
-  per-channel failures isolated.
+  per-channel failures isolated. Recovery only plays while FluxTV is on screen.
 - **REQ-REL-001..008** — exceptions swallowed in data/cache layers; single reused ExoPlayer; config
   in DataStore/JSON survives crashes & updates.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
