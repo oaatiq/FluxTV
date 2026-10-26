@@ -13,11 +13,14 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 4. Startup
 - **REQ-START-001/002** — `AppViewModel.start()` enters EASY and restores
-  `settings.lastChannelStableId`.
+  `settings.lastChannelStableId`. If FluxTV is covered or left before that first tune, the channel is
+  tuned once FluxTV is back on screen, never played behind another app.
 - **REQ-START-003** — no profile/playlist/engine/quality prompts; startup is automatic.
 - **REQ-START-004** — instant start from `PlaylistCache`; modest player pre-roll in `PlayerFactory`.
 - **REQ-START-005/006** — `ui/startup/StartingScreen.kt` (calm, non-technical, auto-dismissed).
-- **REQ-START-007** — `withTimeoutOrNull(20s)` around the first refresh so loading never hangs.
+- **REQ-START-007** — a first refresh (no cache) is awaited for at most 20 s; then EASY opens with
+  "Loading channels…" while it carries on, and the channel is tuned when it lands, so loading never
+  hangs and a large list over a slow line still gets through (the download may take up to 10 min).
 - **REQ-START-008** — on empty/failed restore, EASY still opens and recovery/next-channel apply.
 - **REQ-SEN-003 (0 actions to watch)** — `BootReceiver` starts FluxTV after a boot and
   `StandbyWatcher` brings it to the front when the TV wakes from standby (the remote's power button
@@ -58,12 +61,15 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PL-003** — source persisted in DataStore; parsed list cached as JSON, written through
   `AtomicFile` so a power cut mid-write keeps the previous list (`PlaylistCache`).
 - **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action; one
-  refresh runs at a time, and the playlist is parsed as it downloads, never held as one string.
+  refresh runs at a time, and the playlist is parsed as it downloads, never held as one string. The
+  interval chosen in Preferences survives restarts.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
 - **REQ-PL-006/007** — tolerant parser skips malformed entries; exact repeats (same tvg-id, name and
   address) are dropped, while versions of a channel that share a tvg-id (HD, FHD, SD) are all kept.
 - **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash; a later channel with an already used tvg-id
-  gets both) preserve favorites & numbering on refresh.
+  gets both) preserve favorites & numbering on refresh. Loading a different playlist address numbers
+  its channels afresh; the channel on screen follows the playlist (a new address after a refresh, or
+  the new provider's first channel).
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream

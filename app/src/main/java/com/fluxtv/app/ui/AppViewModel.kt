@@ -16,6 +16,7 @@ import com.fluxtv.app.playback.PlaybackStatus
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -99,7 +100,12 @@ class AppViewModel(
         container.networkMonitor.start()
         viewModelScope.launch {
             container.channelRepository.channels.collect { chs ->
-                _state.update { it.copy(channels = chs.sortedBy { c -> c.number }) }
+                val sorted = chs.sortedBy { c -> c.number }
+                // The channel on screen keeps up with the playlist: a refresh can move it to a new
+                // address, which retries and re-tunes should then use.
+                val current = _state.value.currentChannel?.let { cur -> sorted.firstOrNull { it.stableId == cur.stableId } }
+                _state.update { it.copy(channels = sorted, currentChannel = current ?: it.currentChannel) }
+                current?.let { container.playerController.updateChannel(it) }
             }
         }
         viewModelScope.launch {
@@ -143,25 +149,36 @@ class AppViewModel(
                 return@launch
             }
 
-            if (container.channelRepository.channels.value.isEmpty()) {
+            val startedFromCache = container.channelRepository.channels.value.isNotEmpty()
+            if (!startedFromCache) {
                 _state.update { it.copy(startupMessage = "Preparing television…") }
-                // Bounded wait so we never hang on a loading screen (REQ-START-006/007).
-                withTimeoutOrNull(20_000) {
+                // A first download can take minutes over a slow line. It is waited for a bounded time
+                // only (REQ-START-006/007); then Easy Mode opens, with Settings reachable, while it
+                // carries on, and the channel is tuned when it lands. Awaiting it, rather than the
+                // download itself, is what lets the wait end on time: the download cannot be cut short.
+                val firstLoad = async {
                     container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+                }
+                if (withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { firstLoad.await() } == null) {
+                    _state.update { it.copy(mode = AppMode.EASY, isRefreshing = true) }
+                    firstLoad.await()
+                    _state.update { it.copy(isRefreshing = false) }
                 }
             }
 
             val sorted = container.channelRepository.channels.value.sortedBy { it.number }
             val lineup = if (s.favoritesOnly) sorted.filter { it.stableId in s.favorites } else sorted
 
-            _state.update { it.copy(mode = AppMode.EASY) }
+            // Settings may have been opened during a long first load; it is left open.
+            _state.update { if (it.mode == AppMode.STARTING) it.copy(mode = AppMode.EASY) else it }
             if (lineup.isNotEmpty()) {
                 val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
-                tuneTo(target)
+                if (resumed && _state.value.mode == AppMode.EASY) tuneTo(target) else tuneWhenBack(target)
             }
 
-            // Fire-and-forget refresh to pick up provider updates when we started from cache.
-            if (container.channelRepository.channels.value.isNotEmpty()) {
+            // Started from the cache: pick up provider updates in the background. After a first load
+            // the playlist has just been fetched, and is not fetched twice.
+            if (startedFromCache) {
                 launch { container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName) }
             }
         }
@@ -293,7 +310,9 @@ class AppViewModel(
     fun exitAdmin() {
         _state.update { it.copy(mode = AppMode.EASY) }
         if (retuneIfReturning()) return
-        container.playerController.onResume()
+        // Settings took the video surface away, so the channel is re-tuned once the new one is in
+        // place; resuming the paused stream before that only played a moment of stale sound.
+        if (!retuneWhenOnScreen) container.playerController.onResume()
         if (_state.value.currentChannel == null) {
             val lineup = _state.value.lineup
             if (lineup.isNotEmpty()) tuneTo(lineup.first())
@@ -303,9 +322,11 @@ class AppViewModel(
     fun savePlaylist(url: String, name: String, type: String) {
         viewModelScope.launch {
             val cleanName = name.trim().ifBlank { "My Playlist" }
+            // Another provider's channels are numbered from scratch, not after the old list's last one.
+            val sameSource = url.trim() == _state.value.settings.playlistUrl
             container.settingsRepository.setPlaylist(url.trim(), cleanName, type)
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
-            val outcome = container.channelRepository.refresh(url.trim(), type, cleanName)
+            val outcome = container.channelRepository.refresh(url.trim(), type, cleanName, keepNumbers = sameSource)
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
         }
     }
@@ -424,11 +445,34 @@ class AppViewModel(
     private fun retuneIfReturning(): Boolean {
         if (!retuneWhenOnScreen || !resumed || !videoSurfaceReady) return false
         if (_state.value.mode != AppMode.EASY) return false
-        val channel = _state.value.currentChannel ?: return false
+        val channel = channelToResume() ?: return false
         retuneWhenOnScreen = false
         container.playerController.logReturnToScreen()
         tuneTo(channel)
         return true
+    }
+
+    /**
+     * The channel to put back on screen: the current one as the playlist now has it, or the first of
+     * the lineup when the playlist no longer has it at all (another provider was loaded in Settings).
+     */
+    private fun channelToResume(): Channel? {
+        val st = _state.value
+        val current = st.currentChannel ?: return null
+        if (st.channels.isEmpty() || st.channels.any { it.stableId == current.stableId }) return current
+        return st.lineup.firstOrNull() ?: current
+    }
+
+    /**
+     * Chooses [channel] without playing it yet, because FluxTV is not on screen (covered or left while
+     * it was still starting) or Settings is open. [retuneIfReturning] tunes it once FluxTV is back in
+     * Easy Mode with a video surface. Playing it now would put the sound behind another app, and the
+     * picture would come back on a decoder that never had a surface: the black-picture case.
+     */
+    private fun tuneWhenBack(channel: Channel) {
+        currentChannelId = channel.stableId
+        _state.update { it.copy(currentChannel = channel) }
+        retuneWhenOnScreen = true
     }
 
     override fun onCleared() {
@@ -441,6 +485,9 @@ class AppViewModel(
     }
 
     companion object {
+        /** How long a first playlist download holds the start-up screen before Easy Mode opens. */
+        private const val FIRST_LOAD_WAIT_MS = 20_000L
+
         fun factory(app: FluxTvApplication) = viewModelFactory {
             initializer { AppViewModel(app, app.container) }
         }

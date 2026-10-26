@@ -48,7 +48,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         )
 
         if (state.channels.isEmpty()) {
-            NoChannelsHint()
+            NoChannelsHint(loading = state.isRefreshing)
         }
 
         val channel = state.currentChannel
@@ -100,17 +100,19 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     }
 }
 
+/** [loading]: a first playlist download is still running (it can take minutes over a slow line). */
 @Composable
-private fun NoChannelsHint() {
+private fun NoChannelsHint(loading: Boolean) {
     Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BasicText(
-                "No channels yet",
+                if (loading) "Loading channels…" else "No channels yet",
                 style = TextStyle(color = FluxOnSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold)
             )
             Spacer(Modifier.height(16.dp))
             BasicText(
-                "Open Settings to add your playlist.\nPress the MENU button, or press and hold OK.",
+                if (loading) "The first time can take a few minutes. TV starts on its own when they arrive."
+                else "Open Settings to add your playlist.\nPress the MENU button, or press and hold OK.",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 style = TextStyle(color = FluxMuted, fontSize = 22.sp, textAlign = TextAlign.Center)
             )

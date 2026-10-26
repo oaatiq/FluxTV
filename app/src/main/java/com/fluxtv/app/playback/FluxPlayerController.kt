@@ -146,6 +146,14 @@ class FluxPlayerController(
         if (load(p, channel)) startBufferingWatchdog(START_TIMEOUT_MS)
     }
 
+    /**
+     * The playlist was refreshed. If [channel] is the one being played, retries and re-tunes use this
+     * entry from now on: a provider can move a channel to a new address. Playback goes on as it is.
+     */
+    fun updateChannel(channel: Channel) {
+        if (currentChannel?.stableId == channel.stableId) currentChannel = channel
+    }
+
     /** User pressed "Try again" on the recovery prompt (REQ-REC-005). Resets the budget. */
     fun retryNow() {
         slowRetryJob?.cancel()

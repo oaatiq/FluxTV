@@ -49,7 +49,11 @@ class ChannelRepository(
         _lastUpdatedMs.value = cached.updatedAtMs
     }
 
-    suspend fun refresh(source: String, type: String, sourceName: String?): RefreshOutcome =
+    /**
+     * Fetches [source] and merges it into the lineup. With [keepNumbers] false (another provider's
+     * playlist) the channels are numbered afresh instead of after the old list's highest number.
+     */
+    suspend fun refresh(source: String, type: String, sourceName: String?, keepNumbers: Boolean = true): RefreshOutcome =
         refreshLock.withLock {
             withContext(Dispatchers.IO) {
                 when (val result = fetcher.fetch(source, type)) {
@@ -64,7 +68,7 @@ class ChannelRepository(
                                 keptExisting = _channels.value.isNotEmpty()
                             )
                         }
-                        val merged = merge(_channels.value, entries)
+                        val merged = merge(if (keepNumbers) _channels.value else emptyList(), entries)
                         _channels.value = merged
                         val now = System.currentTimeMillis()
                         _lastUpdatedMs.value = now

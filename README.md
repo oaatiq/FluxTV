@@ -76,7 +76,8 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
 
 1. Launch FluxTV. With no playlist configured it opens **Settings** automatically.
 2. In **Playlist**, enter your provider's **M3U URL** (or a local file path) and press **Save &
-   Load**. There's a **Use sample test playlist** button for a quick public test feed.
+   Load**. There's a **Use sample test playlist** button for a quick public test feed. Loading a
+   different provider's playlist numbers its channels from 1.
 3. Press **Back** repeatedly to return to TV. From now on, launching goes straight to live TV on the
    last channel.
 
@@ -162,7 +163,9 @@ boot and on the Home key, which would also bring a stopped app back: as the Home
 left, because Back and *Exit FluxTV* would just start it again. Tried on the MiTV, and given up.
 
 Another app that starts itself at power-on can still cover FluxTV a few seconds after it comes up (on
-the MiTV, AT4K's boot receiver did, once FluxTV was the Home app). Nothing in FluxTV fights that.
+the MiTV, AT4K's boot receiver did, once FluxTV was the Home app). Nothing in FluxTV fights that, but
+if it happens before FluxTV has tuned its first channel, FluxTV waits and tunes once it is back on
+screen instead of playing behind the other app.
 Force-stopping the other app keeps it from receiving the boot signal until someone opens it by hand;
 Android 9 does not let the shell disable just its receiver.
 

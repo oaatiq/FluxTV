@@ -24,12 +24,18 @@ sealed class FetchResult {
  */
 class PlaylistFetcher(private val context: Context) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(60, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .build()
+    // Built on first use, which is a refresh on a background thread. Built with the class it set up
+    // TLS on the main thread in Application.onCreate, at every start, before FluxTV showed anything.
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            // A stall is caught here, between reads. The whole call gets far longer: it includes
+            // reading the playlist, and at 60 s a large list over a slow line could never finish.
+            .readTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(10, TimeUnit.MINUTES)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
 
     fun fetch(source: String, type: String): FetchResult {
         return try {
