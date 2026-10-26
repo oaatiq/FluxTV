@@ -1,11 +1,15 @@
 package com.fluxtv.app.data.cache
 
 import android.content.Context
+import android.util.AtomicFile
 import com.fluxtv.app.data.model.Channel
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToStream
 import java.io.File
+import java.io.FileOutputStream
 
 @Serializable
 data class CachedPlaylist(
@@ -17,22 +21,37 @@ data class CachedPlaylist(
 /**
  * Persists the last successfully parsed playlist to disk so FluxTV starts instantly and keeps
  * working offline / when a refresh fails (REQ-START-004, REQ-PL-005).
+ *
+ * TVs lose power mid-write (a power strip, a plug pulled), and a truncated cache would start the next
+ * boot with no channels, so the file goes through [AtomicFile]: until a write has finished, a read
+ * gets the previous playlist. It is streamed both ways, never held as one string, and reads and
+ * writes take turns, because AtomicFile drops a write that a read runs into.
  */
+@OptIn(ExperimentalSerializationApi::class)
 class PlaylistCache(context: Context) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val file = File(context.filesDir, "playlist_cache.json")
+    private val file = AtomicFile(File(context.filesDir, "playlist_cache.json"))
 
+    @Synchronized
     fun load(): CachedPlaylist? = try {
-        if (file.exists()) json.decodeFromString<CachedPlaylist>(file.readText()) else null
+        file.openRead().buffered().use { json.decodeFromStream<CachedPlaylist>(it) }
     } catch (_: Exception) {
+        // No cache yet, or one that cannot be read: start without it.
         null
     }
 
+    @Synchronized
     fun save(playlist: CachedPlaylist) {
+        var stream: FileOutputStream? = null
         try {
-            file.writeText(json.encodeToString(playlist))
+            stream = file.startWrite()
+            val out = stream.buffered()
+            json.encodeToStream(playlist, out)
+            out.flush()
+            file.finishWrite(stream)
         } catch (_: Exception) {
-            // Non-fatal: an unwritable cache must never crash the app (REQ-REL).
+            // Non-fatal: an unwritable cache must never crash the app (REQ-REL). The previous one stays.
+            if (stream != null) file.failWrite(stream)
         }
     }
 }

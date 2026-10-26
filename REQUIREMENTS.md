@@ -55,8 +55,10 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 10. Playlist
 - **REQ-PL-001/002** — `M3uParser` + `PlaylistFetcher` accept M3U from URL, file, or content URI.
-- **REQ-PL-003** — source persisted in DataStore; parsed list cached as JSON.
-- **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action.
+- **REQ-PL-003** — source persisted in DataStore; parsed list cached as JSON, written through
+  `AtomicFile` so a power cut mid-write keeps the previous list (`PlaylistCache`).
+- **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action; one
+  refresh runs at a time, and the playlist is parsed as it downloads, never held as one string.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
 - **REQ-PL-006/007** — tolerant parser skips malformed entries and de-duplicates.
 - **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash) preserve favorites & numbering on refresh.

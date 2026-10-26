@@ -1,5 +1,7 @@
 package com.fluxtv.app.data.m3u
 
+import java.io.BufferedReader
+
 /** One parsed playlist entry before it is assigned a stable identity and channel number. */
 data class M3uEntry(
     val name: String,
@@ -21,9 +23,13 @@ data class M3uEntry(
 object M3uParser {
     private val ATTR = Regex("([A-Za-z0-9_-]+)=\"(.*?)\"")
 
-    fun parse(content: String): List<M3uEntry> {
+    /**
+     * Reads the playlist one line at a time, straight from the download or file. A provider's list
+     * can run to tens of megabytes, and holding it as one string, plus the copies that splitting it
+     * into lines makes, could run a TV box out of memory. Lines end at \n, \r or \r\n, as before.
+     */
+    fun parse(reader: BufferedReader): List<M3uEntry> {
         val out = ArrayList<M3uEntry>()
-        val lines = content.replace("\r\n", "\n").replace('\r', '\n').split('\n')
 
         var name: String? = null
         var logo: String? = null
@@ -39,7 +45,7 @@ object M3uParser {
         }
 
         var first = true
-        for (raw in lines) {
+        for (raw in reader.lineSequence()) {
             var line = raw.trim()
             if (first) {
                 line = line.removePrefix("﻿").trim()

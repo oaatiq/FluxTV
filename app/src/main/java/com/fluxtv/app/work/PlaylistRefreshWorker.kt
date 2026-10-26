@@ -27,7 +27,12 @@ class PlaylistRefreshWorker(
         val settings = app.container.settingsRepository.settings.first()
         if (!settings.isConfigured) return Result.success()
 
-        app.container.channelRepository.loadFromCache()
+        // The cache gives the refresh the channel numbers to keep. A process started for this job has
+        // no playlist yet; one that is showing TV already holds it, and decoding it again there would
+        // only add a second copy to memory while a channel plays.
+        if (app.container.channelRepository.channels.value.isEmpty()) {
+            app.container.channelRepository.loadFromCache()
+        }
         val outcome = app.container.channelRepository.refresh(
             settings.playlistUrl!!,
             settings.playlistType,

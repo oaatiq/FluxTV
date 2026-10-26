@@ -3,7 +3,6 @@ package com.fluxtv.app.data.repository
 import com.fluxtv.app.data.cache.CachedPlaylist
 import com.fluxtv.app.data.cache.PlaylistCache
 import com.fluxtv.app.data.m3u.M3uEntry
-import com.fluxtv.app.data.m3u.M3uParser
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.remote.FetchResult
 import com.fluxtv.app.data.remote.PlaylistFetcher
@@ -12,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 sealed class RefreshOutcome {
@@ -35,6 +36,13 @@ class ChannelRepository(
     private val _lastUpdatedMs = MutableStateFlow(0L)
     val lastUpdatedMs: StateFlow<Long> = _lastUpdatedMs.asStateFlow()
 
+    /**
+     * One refresh at a time. The start-up refresh, the periodic job (overdue after the TV was off, it
+     * can run at boot too) and Settings can otherwise overlap: each holds a whole playlist in memory
+     * while it works, and each merges into the list the other one is replacing.
+     */
+    private val refreshLock = Mutex()
+
     fun loadFromCache() {
         val cached = cache.load() ?: return
         _channels.value = cached.channels
@@ -42,25 +50,27 @@ class ChannelRepository(
     }
 
     suspend fun refresh(source: String, type: String, sourceName: String?): RefreshOutcome =
-        withContext(Dispatchers.IO) {
-            when (val result = fetcher.fetch(source, type)) {
-                is FetchResult.Failure ->
-                    RefreshOutcome.Failed(result.reason, keptExisting = _channels.value.isNotEmpty())
+        refreshLock.withLock {
+            withContext(Dispatchers.IO) {
+                when (val result = fetcher.fetch(source, type)) {
+                    is FetchResult.Failure ->
+                        RefreshOutcome.Failed(result.reason, keptExisting = _channels.value.isNotEmpty())
 
-                is FetchResult.Success -> {
-                    val entries = M3uParser.parse(result.content)
-                    if (entries.isEmpty()) {
-                        return@withContext RefreshOutcome.Failed(
-                            "no channels parsed",
-                            keptExisting = _channels.value.isNotEmpty()
-                        )
+                    is FetchResult.Success -> {
+                        val entries = result.entries
+                        if (entries.isEmpty()) {
+                            return@withContext RefreshOutcome.Failed(
+                                "no channels parsed",
+                                keptExisting = _channels.value.isNotEmpty()
+                            )
+                        }
+                        val merged = merge(_channels.value, entries)
+                        _channels.value = merged
+                        val now = System.currentTimeMillis()
+                        _lastUpdatedMs.value = now
+                        cache.save(CachedPlaylist(merged, now, sourceName))
+                        RefreshOutcome.Success(merged.size)
                     }
-                    val merged = merge(_channels.value, entries)
-                    _channels.value = merged
-                    val now = System.currentTimeMillis()
-                    _lastUpdatedMs.value = now
-                    cache.save(CachedPlaylist(merged, now, sourceName))
-                    RefreshOutcome.Success(merged.size)
                 }
             }
         }
