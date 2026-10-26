@@ -81,7 +81,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
 - **REQ-PLAY-006 / REQ-BUF-004** — phases distinguish loading / transient / prolonged / failure in
   `FluxPlayerController`.
-- **REQ-BUF-001/002** — `DefaultLoadControl` 30–60s buffer, `prioritizeTimeOverSizeThresholds`.
+- **REQ-BUF-001/002** — `DefaultLoadControl` 30–60s buffer, `prioritizeTimeOverSizeThresholds`; where
+  apps get 192 MB of heap or less, the buffer is capped at a quarter of it instead.
 - **REQ-BUF-003** — short buffering shows no message; only a watchdog escalates: 8 s for a stall,
   15 s for a channel still starting, armed by every prepare.
 - **REQ-BUF-005/006/007** — automatic recovery, no Retry needed, bounded by `RecoveryPolicy`.
@@ -92,7 +93,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 
 ## 14. Frame-rate adaptability
 - **REQ-FPS-001/002** — `FrameRateController` + ExoPlayer AFR (`VIDEO_CHANGE_FRAME_RATE_STRATEGY_*`).
-- **REQ-FPS-003/004** — only switches on fps change at equal resolution; mode de-dup.
+- **REQ-FPS-003/004** — only switches on fps change at equal resolution; mode de-dup; only once the
+  new frame rate has held for 3 s, so zapping does not switch the TV's mode at every step.
 - **REQ-FPS-005** — all guarded; if unavailable, playback continues unchanged.
 
 ## 15–17. Network, reliability, recovery

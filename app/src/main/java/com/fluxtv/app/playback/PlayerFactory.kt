@@ -1,5 +1,6 @@
 package com.fluxtv.app.playback
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Handler
 import androidx.media3.common.AudioAttributes
@@ -25,11 +26,15 @@ import androidx.media3.exoplayer.video.VideoRendererEventListener
  * Builds a reliability-tuned ExoPlayer.
  *
  * Buffering favors uninterrupted viewing over low latency (REQ-BUF-001/002): a large 30–60s buffer,
- * with a modest pre-roll so startup stays fast (REQ-START-004). Adaptive track selection is on by
- * default and can be capped by the administrator (REQ-ADP). Decoder fallback is enabled so one
- * unsupported track doesn't kill playback (REQ-PLAY-003, REQ-REL-004).
+ * capped by size on low-memory boxes, with a modest pre-roll so startup stays fast (REQ-START-004).
+ * Adaptive track selection is on by default and can be capped by the administrator (REQ-ADP).
+ * Decoder fallback is enabled so one unsupported track doesn't kill playback (REQ-PLAY-003,
+ * REQ-REL-004).
  */
 object PlayerFactory {
+
+    /** At or below this Java heap per app (ActivityManager.memoryClass), the buffer is capped by size. */
+    private const val LOW_MEMORY_HEAP_MB = 192
 
     data class Bundle(
         val player: ExoPlayer,
@@ -47,7 +52,18 @@ object PlayerFactory {
                 /* bufferForPlaybackMs = */ 2_500,
                 /* bufferForPlaybackAfterRebufferMs = */ 5_000
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .apply {
+                val heapMb = context.getSystemService(ActivityManager::class.java)?.memoryClass ?: 0
+                if (heapMb in 1..LOW_MEMORY_HEAP_MB) {
+                    // The buffer is held on the app's Java heap. Kept by time alone (30 s at least),
+                    // a high-bitrate or on-demand stream can fill about 100 MB, too much where apps get
+                    // 192 MB or less; there a size cap, a quarter of the heap, wins over the time.
+                    setTargetBufferBytes(heapMb / 4 * 1024 * 1024)
+                    setPrioritizeTimeOverSizeThresholds(false)
+                } else {
+                    setPrioritizeTimeOverSizeThresholds(true)
+                }
+            }
             .build()
 
         val trackSelector = DefaultTrackSelector(context).apply {

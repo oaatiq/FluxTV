@@ -77,6 +77,10 @@ fun PlayerSurface(
             )
             view
         },
+        // Settings replaces this view and Compose lets it go, but the PlayerView stayed registered
+        // with the process-wide player and kept receiving its events until FluxTV was closed: one
+        // more for every visit to Settings. Detaching it here lets it go for real.
+        onRelease = { view -> view.player = null },
         update = { view ->
             // The controller has no player until it first tunes, hence the readiness signal.
             view.player = if (playerReady) controller.player else null

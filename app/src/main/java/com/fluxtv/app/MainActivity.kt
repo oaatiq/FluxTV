@@ -19,6 +19,8 @@ import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.EasyOverlay
 import com.fluxtv.app.ui.FluxApp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -50,9 +52,12 @@ class MainActivity : ComponentActivity() {
 
         setContent { FluxApp(viewModel, onExit = ::finishAndRemoveTask) }
 
-        // Match the display mode to the source frame rate when enabled (§14).
+        // Match the display mode to the source frame rate when enabled (§14), once the frame rate has
+        // held for a moment: many TVs go black for a second or more on each mode switch, and zapping
+        // between 25/50 and 30/60 fps channels used to switch the mode at every step.
         lifecycleScope.launch {
-            viewModel.controller.videoFrameRate.collect { fps ->
+            viewModel.controller.videoFrameRate.collectLatest { fps ->
+                delay(FRAME_RATE_SETTLE_MS)
                 if (viewModel.uiState.value.settings.frameRateMatching) {
                     frameRateController.apply(fps)
                 }
@@ -212,5 +217,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         return false
+    }
+
+    private companion object {
+        /** How long a new frame rate has to hold before the display mode follows it. */
+        const val FRAME_RATE_SETTLE_MS = 3_000L
     }
 }
