@@ -11,7 +11,8 @@ import java.util.concurrent.TimeUnit
 
 sealed class FetchResult {
     data class Success(val entries: List<M3uEntry>) : FetchResult()
-    data class Failure(val reason: String) : FetchResult()
+    /** [httpCode]: the provider's server answered, with this error. */
+    data class Failure(val reason: String, val httpCode: Int? = null) : FetchResult()
 }
 
 /**
@@ -53,7 +54,7 @@ class PlaylistFetcher(
                         .header("User-Agent", userAgent)
                         .build()
                     client.newCall(request).execute().use { resp ->
-                        if (!resp.isSuccessful) return FetchResult.Failure("HTTP ${resp.code}")
+                        if (!resp.isSuccessful) return FetchResult.Failure("HTTP ${resp.code}", resp.code)
                         val body = resp.body ?: return FetchResult.Failure("empty response")
                         // charStream() decodes with the response's charset and drops a BOM, as string() did.
                         FetchResult.Success(body.charStream().buffered().use { M3uParser.parse(it) })

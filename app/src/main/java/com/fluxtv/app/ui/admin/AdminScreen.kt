@@ -1,6 +1,7 @@
 package com.fluxtv.app.ui.admin
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,13 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,12 +30,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +49,7 @@ import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
 import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
 import com.fluxtv.app.openSelfStartPermission
+import com.fluxtv.app.setup.AddStatus
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.ChannelRow
@@ -49,22 +58,31 @@ import com.fluxtv.app.ui.components.FluxChip
 import com.fluxtv.app.ui.components.FluxTextField
 import com.fluxtv.app.ui.components.FluxToggleRow
 import com.fluxtv.app.ui.components.InfoRow
+import com.fluxtv.app.ui.components.PlaylistRow
+import com.fluxtv.app.ui.components.QrCode
 import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
+import com.fluxtv.app.ui.theme.FluxSurface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private enum class AdminSection { MENU, PLAYLIST, CHANNELS, PREFERENCES, DIAGNOSTICS }
+/** [PLAYLIST] is one saved playlist; it, [ADD_BY_PHONE] and [ADD_BY_TYPING] open from [PLAYLISTS]. */
+private enum class AdminSection {
+    MENU, PLAYLISTS, PLAYLIST, ADD_BY_PHONE, ADD_BY_TYPING, CHANNELS, PREFERENCES, DIAGNOSTICS
+}
 
 /**
  * Administrator area, fully separated from Easy Mode (REQ-GEN-003, REQ-CFG-003) and optionally
  * protected by a PIN (REQ-CFG-004). Reached only by a deliberate gesture (hold OK / MENU). It also
  * holds "Exit FluxTV" (Back from the Categories view and Home also leave the app).
+ *
+ * Playlists are managed here and only here: Easy Mode never names a playlist or offers a choice of
+ * one, and shows the channels of the one in use.
  */
 @Composable
 fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
@@ -74,9 +92,18 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
         return
     }
 
-    var section by remember { mutableStateOf(AdminSection.MENU) }
+    // With no playlist yet, Settings opens where one is added.
+    var section by remember {
+        mutableStateOf(if (state.settings.playlists.isEmpty()) AdminSection.PLAYLISTS else AdminSection.MENU)
+    }
+    var playlistId by remember { mutableStateOf<String?>(null) }
     BackHandler(enabled = true) {
-        if (section != AdminSection.MENU) section = AdminSection.MENU else vm.exitAdmin()
+        when (section) {
+            AdminSection.MENU -> vm.exitAdmin()
+            AdminSection.PLAYLIST, AdminSection.ADD_BY_PHONE, AdminSection.ADD_BY_TYPING ->
+                section = AdminSection.PLAYLISTS
+            else -> section = AdminSection.MENU
+        }
     }
 
     Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp)) {
@@ -87,7 +114,21 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
                 onExit = { vm.exitAdmin() },
                 onExitApp = onExitApp
             )
-            AdminSection.PLAYLIST -> PlaylistSection(state, vm)
+            AdminSection.PLAYLISTS -> PlaylistsSection(
+                state,
+                vm,
+                onOpen = { playlistId = it; section = AdminSection.PLAYLIST },
+                onAddByPhone = { section = AdminSection.ADD_BY_PHONE },
+                onAddByTyping = { section = AdminSection.ADD_BY_TYPING }
+            )
+            AdminSection.PLAYLIST -> PlaylistSection(
+                state,
+                vm,
+                id = playlistId.orEmpty(),
+                onGone = { section = AdminSection.PLAYLISTS }
+            )
+            AdminSection.ADD_BY_PHONE -> PhoneSetupSection(state, vm, onDone = { section = AdminSection.PLAYLISTS })
+            AdminSection.ADD_BY_TYPING -> AddByTypingSection(state, vm)
             AdminSection.CHANNELS -> ChannelsSection(state, vm)
             AdminSection.PREFERENCES -> PreferencesSection(state, vm)
             AdminSection.DIAGNOSTICS -> DiagnosticsSection(state, vm)
@@ -134,11 +175,14 @@ private fun AdminMenu(
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionTitle("FluxTV Settings")
         BasicText(
-            "${state.channels.size} channels" + if (state.lastUpdatedMs > 0) " • updated ${formatTime(state.lastUpdatedMs)}" else "",
+            (state.settings.activePlaylist?.let { "“${it.name}” • " } ?: "") + "${state.channels.size} channels" +
+                if (state.lastUpdatedMs > 0) " • updated ${formatTime(state.lastUpdatedMs)}" else "",
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             style = TextStyle(color = FluxMuted, fontSize = 18.sp)
         )
         Spacer(Modifier.height(8.dp))
-        FluxButton("Playlist", Modifier.fillMaxWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLIST) }
+        FluxButton("Playlists", Modifier.fillMaxWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
         FluxButton("Channels & favorites", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
         FluxButton("Preferences", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
         FluxButton("Diagnostics", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
@@ -150,19 +194,189 @@ private fun AdminMenu(
     }
 }
 
+/** Settings → Playlists: the saved playlists, the one in use marked, and the ways to add one. */
 @Composable
-private fun PlaylistSection(state: UiState, vm: AppViewModel) {
-    var url by remember { mutableStateOf(state.settings.playlistUrl ?: "") }
-    var name by remember { mutableStateOf(state.settings.playlistName ?: "") }
-    var isFile by remember { mutableStateOf(state.settings.playlistType == "file") }
+private fun PlaylistsSection(
+    state: UiState,
+    vm: AppViewModel,
+    onOpen: (String) -> Unit,
+    onAddByPhone: () -> Unit,
+    onAddByTyping: () -> Unit
+) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) {
+        vm.clearPlaylistMessages()
+        runCatching { first.requestFocus() }
+    }
+    val active = state.settings.activePlaylist
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SectionTitle("Playlists")
+        BasicText(
+            if (active == null) "No playlist yet. Add one to start watching."
+            else "TV shows “${active.name}”: ${state.channels.size} channels" +
+                if (state.lastUpdatedMs > 0) ", updated ${formatTime(state.lastUpdatedMs)}." else ".",
+            style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FluxButton("Add channels using your phone", focusRequester = first) { onAddByPhone() }
+            FluxButton("Type a link on the TV") { onAddByTyping() }
+        }
+        if (state.settings.playlists.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            BasicText("Saved playlists", style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold))
+            Column(Modifier.fillMaxWidth(0.7f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.settings.playlists.forEach { playlist ->
+                    PlaylistRow(playlist.name, inUse = playlist.id == state.settings.activePlaylistId) { onOpen(playlist.id) }
+                }
+            }
+            BasicText(
+                "Choose a playlist to use it, rename it, change its link or delete it. TV shows one playlist at a time.",
+                style = TextStyle(color = FluxMuted, fontSize = 16.sp)
+            )
+        }
+        PlaylistMessages(state)
+    }
+}
+
+private enum class PlaylistEdit { NAME, LINK }
+
+/** One saved playlist: put it in use, rename it, give it a new link, or delete it. */
+@Composable
+private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone: () -> Unit) {
+    val playlist = state.settings.playlists.firstOrNull { it.id == id }
+    if (playlist == null) {
+        // Deleted: back to the list.
+        LaunchedEffect(Unit) { onGone() }
+        return
+    }
+    val inUse = id == state.settings.activePlaylistId
+    var editing by remember { mutableStateOf<PlaylistEdit?>(null) }
+    var lastEdit by remember { mutableStateOf<PlaylistEdit?>(null) }
+    var nameDraft by remember { mutableStateOf(playlist.name) }
+    var linkDraft by remember { mutableStateOf(playlist.url) }
+    var isFile by remember { mutableStateOf(playlist.type == "file") }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val first = remember { FocusRequester() }
+    val renameButton = remember { FocusRequester() }
+    val linkButton = remember { FocusRequester() }
+    val field = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        vm.clearPlaylistMessages()
+        runCatching { first.requestFocus() }
+    }
+    // Into the field when it opens, and back to its button when it closes.
+    LaunchedEffect(editing) {
+        val edit = editing
+        if (edit != null) {
+            lastEdit = edit
+            runCatching { field.requestFocus() }
+        } else {
+            lastEdit?.let { runCatching { (if (it == PlaylistEdit.NAME) renameButton else linkButton).requestFocus() } }
+        }
+    }
 
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionTitle("Playlist")
+        SectionTitle(playlist.name)
+        BasicText(
+            if (inUse) "In use: TV shows this playlist's ${state.channels.size} channels."
+            else "Saved. Not in use: TV shows “${state.settings.activePlaylist?.name ?: "—"}”.",
+            style = TextStyle(color = FluxOnSurface, fontSize = 20.sp)
+        )
+        BasicText(
+            playlist.url,
+            modifier = Modifier.fillMaxWidth(0.9f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(color = FluxMuted, fontSize = 16.sp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // One button whose job follows the playlist, so the focus stays on it once it is in use.
+            FluxButton(if (inUse) "Refresh now" else "Use this playlist", focusRequester = first) {
+                if (inUse) vm.refreshNow() else vm.usePlaylist(id)
+            }
+            FluxButton("Rename", focusRequester = renameButton) { nameDraft = playlist.name; editing = PlaylistEdit.NAME }
+            FluxButton("Change link", focusRequester = linkButton) {
+                linkDraft = playlist.url
+                isFile = playlist.type == "file"
+                editing = PlaylistEdit.LINK
+            }
+        }
+        when (editing) {
+            PlaylistEdit.NAME -> {
+                FluxTextField(
+                    label = "Name",
+                    value = nameDraft,
+                    onValueChange = { nameDraft = it.take(60) },
+                    modifier = Modifier.fillMaxWidth(0.6f),
+                    focusRequester = field
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FluxButton("Save name") { vm.renamePlaylist(id, nameDraft); editing = null }
+                    FluxButton("Cancel") { editing = null }
+                }
+            }
+            PlaylistEdit.LINK -> {
+                FluxTextField(
+                    label = "Playlist link (M3U) or file path",
+                    value = linkDraft,
+                    onValueChange = { linkDraft = it },
+                    modifier = Modifier.fillMaxWidth(0.9f),
+                    focusRequester = field,
+                    keyboardType = KeyboardType.Uri
+                )
+                FluxToggleRow("Source is a local file", isFile, Modifier.fillMaxWidth(0.6f)) { isFile = it }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FluxButton("Check and save link") {
+                        vm.editPlaylistLink(id, linkDraft, if (isFile) "file" else "url")
+                        editing = null
+                    }
+                    FluxButton("Cancel") { editing = null }
+                }
+            }
+            null -> Unit
+        }
+        if (inUse) {
+            BasicText(
+                "To delete this playlist, first choose Use this playlist on another one.",
+                style = TextStyle(color = FluxMuted, fontSize = 16.sp)
+            )
+        } else {
+            FluxButton(if (confirmDelete) "Press again to delete “${playlist.name}”" else "Delete this playlist") {
+                if (confirmDelete) {
+                    vm.deletePlaylist(id)
+                    onGone()
+                } else {
+                    confirmDelete = true
+                }
+            }
+        }
+        PlaylistMessages(state)
+    }
+}
+
+/** A playlist link or file typed with the remote (or a keyboard), for when there is no phone at hand. */
+@Composable
+private fun AddByTypingSection(state: UiState, vm: AppViewModel) {
+    var url by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var isFile by remember { mutableStateOf(false) }
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        vm.clearPlaylistMessages()
+        runCatching { first.requestFocus() }
+    }
+
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SectionTitle("Type a playlist link")
         FluxTextField(
             label = "Playlist address (M3U URL) or file path",
             value = url,
@@ -173,34 +387,144 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel) {
             keyboardType = KeyboardType.Uri
         )
         FluxTextField(
-            label = "Name",
+            label = "Name (optional)",
             value = name,
-            onValueChange = { name = it },
+            onValueChange = { name = it.take(60) },
             modifier = Modifier.fillMaxWidth(0.6f),
-            placeholder = "My Playlist"
+            placeholder = "For example: Sports package"
         )
         FluxToggleRow("Source is a local file", isFile, Modifier.fillMaxWidth(0.6f)) { isFile = it }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FluxButton("Save & Load") { vm.savePlaylist(url, name, if (isFile) "file" else "url") }
-            FluxButton("Refresh now") { vm.refreshNow() }
+            FluxButton("Check and add") { vm.addTypedPlaylist(url, name, if (isFile) "file" else "url") }
+            FluxButton("Use sample test playlist") {
+                url = "https://iptv-org.github.io/iptv/index.m3u"
+                name = "IPTV-Org Sample"
+                isFile = false
+            }
         }
-        FluxButton("Use sample test playlist") {
-            url = "https://iptv-org.github.io/iptv/index.m3u"
-            name = "IPTV-Org Sample"
-            isFile = false
-        }
-        if (state.isRefreshing) BasicText("Loading…", style = TextStyle(color = FluxAccent, fontSize = 20.sp))
-        state.lastRefreshMessage?.let {
-            BasicText(it, style = TextStyle(color = FluxOnSurface, fontSize = 20.sp))
-        }
-        BasicText("Channels loaded: ${state.channels.size}", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        if (state.lastUpdatedMs > 0) {
-            BasicText("Last updated: ${formatTime(state.lastUpdatedMs)}", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        }
+        AddStatusCard(state, vm)
         BasicText(
             "Credentials in the address stay hidden from the Viewer during normal use.",
             style = TextStyle(color = FluxMuted, fontSize = 15.sp)
         )
+    }
+}
+
+/**
+ * The QR code a phone scans to send a playlist link to the TV. The phone page answers only while this
+ * screen is open (and for 15 minutes at most): leaving it ends the setup session.
+ */
+@Composable
+private fun PhoneSetupSection(state: UiState, vm: AppViewModel, onDone: () -> Unit) {
+    DisposableEffect(Unit) {
+        vm.startPhoneSetup()
+        onDispose { vm.stopPhoneSetup() }
+    }
+    val done = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { done.requestFocus() } }
+    val setup = state.phoneSetup
+    val address = setup?.address?.takeIf { !setup.ended }
+    val muted = TextStyle(color = FluxMuted, fontSize = 18.sp)
+
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        Box(
+            Modifier.size(300.dp).clip(RoundedCornerShape(12.dp)).background(if (address != null) Color.White else FluxSurface),
+            contentAlignment = Alignment.Center
+        ) {
+            if (address != null) {
+                QrCode(address, Modifier.fillMaxSize())
+            } else {
+                BasicText(
+                    when {
+                        setup == null || setup.starting -> "Preparing the code…"
+                        setup.ended -> "Phone setup has ended"
+                        else -> "No network"
+                    },
+                    modifier = Modifier.padding(24.dp),
+                    style = TextStyle(color = FluxMuted, fontSize = 20.sp, textAlign = TextAlign.Center)
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            SectionTitle("Add channels using your phone")
+            when {
+                setup == null || setup.starting -> BasicText("Preparing the code…", style = muted)
+                setup.ended -> {
+                    BasicText("Phone setup has ended. Start again for a new code.", style = muted)
+                    FluxButton("Start again") { vm.startPhoneSetup(); runCatching { done.requestFocus() } }
+                }
+                address == null -> {
+                    BasicText(
+                        "This TV is not connected to a network, so a phone cannot reach it. " +
+                            "Connect the TV to your Wi-Fi or network cable, then try again.",
+                        style = muted
+                    )
+                    FluxButton("Try again") { vm.startPhoneSetup(); runCatching { done.requestFocus() } }
+                }
+                else -> {
+                    BasicText(
+                        "Scan with your phone to add channels.",
+                        style = TextStyle(color = FluxOnSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    )
+                    BasicText(
+                        "1. Point your phone's camera at the code and open the page it finds.\n" +
+                            "2. Paste the playlist link and press Send to TV.",
+                        style = TextStyle(color = FluxOnSurface, fontSize = 20.sp)
+                    )
+                    BasicText("The phone must be on the same Wi-Fi network as this TV.", style = muted)
+                    BasicText(
+                        "This TV: ${setup.tvName}   •   code ${setup.tvCode}",
+                        style = TextStyle(color = FluxOnSurface, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    )
+                    if (state.addStatus == null) BasicText("Waiting for your phone…", style = TextStyle(color = FluxAccent, fontSize = 20.sp))
+                }
+            }
+            AddStatusCard(state, vm)
+            FluxButton("Done", focusRequester = done) { onDone() }
+            if (address != null) {
+                BasicText("No camera? Type this address in the phone's browser: $address", style = TextStyle(color = FluxMuted, fontSize = 15.sp))
+            }
+        }
+    }
+}
+
+/**
+ * How adding a playlist went. A new playlist is not put in use by itself while another one is (only
+ * the first is): "Use this playlist" is the administrator's explicit choice to replace it.
+ */
+@Composable
+private fun AddStatusCard(state: UiState, vm: AppViewModel) {
+    val body = TextStyle(color = FluxOnSurface, fontSize = 20.sp)
+    when (val status = state.addStatus) {
+        null -> Unit
+        AddStatus.Checking -> BasicText("Checking the playlist…", style = TextStyle(color = FluxAccent, fontSize = 20.sp))
+        is AddStatus.Added -> {
+            val inUse = status.playlistId == state.settings.activePlaylistId
+            BasicText(
+                if (inUse) "“${status.name}” is in use: ${status.count} channels. TV shows them when you leave Settings."
+                else "Added “${status.name}”: ${status.count} channels. It is not in use yet.",
+                style = body
+            )
+            // One button whose job follows the playlist, so the focus stays on it once it is in use.
+            FluxButton(if (inUse) "Watch TV" else "Use this playlist") {
+                if (inUse) vm.exitAdmin() else vm.usePlaylist(status.playlistId)
+            }
+            PlaylistMessages(state)
+        }
+        is AddStatus.AlreadySaved -> BasicText("This TV already has this playlist, saved as “${status.name}”.", style = body)
+        is AddStatus.Failed -> BasicText("Not added. ${status.message} Nothing was changed.", style = body)
+    }
+}
+
+/** "Loading…" while a playlist loads, then how it went. */
+@Composable
+private fun PlaylistMessages(state: UiState) {
+    if (state.isRefreshing) BasicText("Loading…", style = TextStyle(color = FluxAccent, fontSize = 20.sp))
+    state.lastRefreshMessage?.let {
+        BasicText(it, style = TextStyle(color = FluxOnSurface, fontSize = 20.sp))
     }
 }
 
@@ -210,6 +534,9 @@ private fun ChannelsSection(state: UiState, vm: AppViewModel) {
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle("Channels & favorites")
+        state.settings.activePlaylist?.let {
+            BasicText("Favorites of “${it.name}”: each playlist keeps its own.", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        }
         FluxToggleRow(
             "Easy Mode shows favorites only",
             state.settings.favoritesOnly,

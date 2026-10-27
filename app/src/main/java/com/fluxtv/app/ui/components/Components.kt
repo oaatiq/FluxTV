@@ -314,6 +314,45 @@ fun CategoryRow(
     }
 }
 
+/** One saved playlist in Settings → Playlists. [inUse] marks, in words, the one TV shows. */
+@Composable
+fun PlaylistRow(
+    name: String,
+    inUse: Boolean,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val textColor = if (focused) OnAccent else FluxOnSurface
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .background(if (focused) FluxAccent else FluxSurface)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicText(
+            name,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(color = textColor, fontSize = 22.sp, fontWeight = if (inUse) FontWeight.Bold else FontWeight.Normal)
+        )
+        if (inUse) {
+            Spacer(Modifier.width(12.dp))
+            BasicText(
+                "IN USE",
+                style = TextStyle(color = if (focused) OnAccent else FluxAccent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            )
+        }
+    }
+}
+
 @Composable
 fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
     Row(

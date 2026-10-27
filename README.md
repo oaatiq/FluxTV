@@ -20,6 +20,7 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
 - **DataStore** (settings/favorites) + a JSON playlist cache — no database, so config survives
   restarts and app updates with zero migration risk
 - **WorkManager** for unattended periodic playlist refresh
+- **ZXing** (core only) to draw the QR code a phone scans to send a playlist to the TV
 - No Hilt/Room/KSP — a tiny manual DI container keeps the build simple and robust
 
 Targets: `minSdk 24` (Android 7) · `targetSdk 34` · `compileSdk 35`.
@@ -76,12 +77,15 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
 
 ## First run
 
-1. Launch FluxTV. With no playlist configured it opens **Settings** automatically.
-2. In **Playlist**, enter your provider's **M3U URL** (or a local file path) and press **Save &
-   Load**. There's a **Use sample test playlist** button for a quick public test feed. Loading a
-   different provider's playlist numbers its channels from 1.
-3. Press **Back** repeatedly to return to TV. From now on, launching goes straight to live TV on the
-   last channel.
+1. Launch FluxTV. With no playlist configured it opens **Settings → Playlists** automatically.
+2. Choose **Add channels using your phone** and scan the QR code with the phone's camera. The phone
+   opens a page from the TV itself (nothing to install): paste the provider's **M3U link**, press
+   **Send to TV**, and both the phone and the TV say whether it worked. The phone has to be on the
+   same Wi-Fi as the TV. Without a phone, **Type a link on the TV** takes the link (or a local file
+   path) from the remote or a keyboard, and has a **Use sample test playlist** button for a quick
+   public test feed.
+3. Press **Back** repeatedly, or **Watch TV**, to return to TV. From now on, launching goes straight
+   to live TV on the last channel, with no phone needed.
 
 If the playlist cannot be loaded and none was saved before (the TV started before its network was
 up, or the provider is down), TV shows *Can't load the channels* and FluxTV keeps trying: as soon as
@@ -223,24 +227,73 @@ MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one acti
 Reached only by a deliberate gesture (**hold OK** or the **MENU** button), so ordinary navigation
 can never expose destructive actions. Optionally protect it with a **PIN** (Preferences). Sections:
 
-- **Playlist** — set the M3U source, refresh, see channel count / last update.
+- **Playlists** — add playlists (from a phone, or typed), see the saved ones with the one in use
+  marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link or
+  delete it. See [Playlists](#playlists) below.
 - **Channels & favorites** — curate favorites (OK toggles ★) and enable *favorites-only* Easy Mode,
-  so a 2,000-channel subscription can show your grandfather just the handful he watches.
+  so a 2,000-channel subscription can show your grandfather just the handful he watches. Favorites
+  belong to the playlist in use; a playlist with none shows all its channels even in favorites-only
+  mode, rather than nothing.
 - **Preferences** — favorites-only, max quality (Auto / 720p / 1080p), refresh-rate matching
   (switching it off puts the TV back in its own mode at once), auto-refresh interval, the **player
   name** sent to the provider (User-Agent: some providers only serve players they know; empty means
-  `FluxTV/1.0`), and the Settings PIN.
+  `FluxTV/1.0`; it is used for every saved playlist), and the Settings PIN.
 - **Diagnostics** — live stream health and a persisted event history for troubleshooting: channel
   reachability, resolution, frame rate, **hardware vs software decoding**, codecs, bitrate,
   bandwidth, buffered duration, dropped frames, buffering events, recoveries and channel startup
   time. If FluxTV ever closes by itself, the next start adds a *crash* line saying what failed and
   where; a picture that froze while the sound played on is restarted and noted under *decoder*.
 
+## Playlists
+
+FluxTV keeps any number of saved playlists, each with a name the administrator chooses, and shows the
+channels of **one** of them, the one in use. Channels of different playlists are never combined, and
+everything about choosing between them lives in **Settings → Playlists**: Easy Mode never shows a
+playlist name, link or choice, and the Viewer is never asked to pick one.
+
+- **Adding never switches.** A new playlist is checked (downloaded and read) and saved only if it
+  works; a link that does not work changes nothing and gets a plain-language reason. It is not put in
+  use either, except the very first playlist, which has nothing to replace. Switching is always the
+  administrator's explicit **Use this playlist**.
+- **Switching is checked first.** **Use this playlist** loads the playlist before it replaces
+  anything; if it cannot be loaded, the playlist in use stays as it was. Once it loads, leaving
+  Settings resumes that playlist's own last channel, or its first.
+- **Each playlist keeps its own** favorites and last channel, so switching away and back finds them
+  as they were. The playlist in use is remembered across restarts, and only it is refreshed.
+- **The playlist in use cannot be deleted**: put another one in use first.
+- Playback trouble never switches playlists by itself; FluxTV keeps retrying the one in use.
+- Updating from a version with a single playlist keeps it, as the first saved playlist and the one in
+  use, with its favorites and last channel.
+
+### Adding channels from a phone
+
+**Add channels using your phone** shows a QR code. While that screen is open, FluxTV answers on the
+home network at `http://<tv-address>:8790/<code>` (another port if 8790 is taken), and that address
+is what the QR code holds; the screen also shows it in text for a phone without a camera. The page
+names the TV and shows a four-digit TV code that the TV screen also shows, so it is clear which TV
+the link goes to. It has a **Playlist link** field, an optional **Name**, and **Send to TV**. The TV
+then checks the link and both screens say how it went; on the phone, a link that did not work comes
+back in the form to be corrected.
+
+The phone page is a setup session, not a service that is always on:
+
+- It answers only while the QR screen is open in Settings (behind the PIN, if one is set). Leaving
+  that screen, the TV going to standby or another app taking over ends it, as do 15 minutes. A new
+  session has a new address.
+- Every address it answers starts with a random 12-character code that only the QR code carries, so
+  a device on the network that has not scanned the TV's screen gets nothing.
+- The link travels over the home network as plain HTTP, the way most IPTV playlists are fetched
+  anyway. The page is not cached, and FluxTV logs playlist names, never links.
+
 ## Acceptance testing
 
 **The Grandfather Test (§27).** Without any explanation, a first-time user should be able to: turn
 on and see TV; go to the next/previous channel; find a channel; adjust volume; see the other
 channels in the current category (Back); and keep watching after a brief network interruption.
+
+**Multiple playlists.** Save two playlists, put the second in use in **Settings → Playlists**, then
+restart FluxTV (or the TV). TV comes back on the second playlist's channels, on its last channel,
+with no playlist prompt or choice anywhere outside Settings.
 
 **Hardware decoding (REQ-HW-007).** For each reference stream, confirm in **Settings → Diagnostics**
 that *Decoding* reads **Hardware (…)**, not merely that hardware was available. Any hardware→software
@@ -291,9 +344,10 @@ the Android version that needs the permission above).
 app/src/main/java/com/fluxtv/app/
 ├─ data/            M3U parsing, settings (DataStore), JSON cache, repository
 ├─ playback/        ExoPlayer setup, recovery, error mapping, network & frame-rate, diagnostics
+├─ setup/           the phone page behind the QR code (a small web server, during setup only)
 ├─ ui/
 │  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner)
-│  ├─ admin/        PIN gate + playlist / channels / preferences / diagnostics
+│  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics
 │  ├─ components/   large-type, high-contrast, focusable TV widgets
 │  └─ AppViewModel  the Easy Mode state machine (STARTING → WATCHING ⇄ CHANNEL LIST)
 ├─ work/            WorkManager periodic refresh

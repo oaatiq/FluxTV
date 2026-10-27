@@ -96,6 +96,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+    // Draws the QR code a phone scans to send a playlist to the TV (Settings → Playlists).
+    implementation(libs.zxing.core)
 
     debugImplementation(libs.androidx.ui.tooling)
 }
