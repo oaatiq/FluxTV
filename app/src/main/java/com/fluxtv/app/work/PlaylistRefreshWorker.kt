@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * Refreshes the playlist in the background with no Viewer intervention (REQ-PL-004).
+ * Refreshes the playlist in use in the background with no Viewer intervention (REQ-PL-004).
  * A failed refresh never discards the existing playlist (REQ-PL-005); the work simply retries.
  */
 class PlaylistRefreshWorker(
@@ -25,19 +25,16 @@ class PlaylistRefreshWorker(
     override suspend fun doWork(): Result {
         val app = applicationContext as? FluxTvApplication ?: return Result.success()
         val settings = app.container.settingsRepository.settings.first()
-        if (!settings.isConfigured) return Result.success()
+        // Only the playlist in use is refreshed; the other saved ones are checked when put in use.
+        val playlist = settings.activePlaylist?.takeIf { settings.isConfigured } ?: return Result.success()
 
         // The cache gives the refresh the channel numbers to keep. A process started for this job has
         // no playlist yet; one that is showing TV already holds it, and decoding it again there would
         // only add a second copy to memory while a channel plays.
         if (app.container.channelRepository.channels.value.isEmpty()) {
-            app.container.channelRepository.loadFromCache()
+            app.container.channelRepository.loadFromCache(playlist.id)
         }
-        val outcome = app.container.channelRepository.refresh(
-            settings.playlistUrl!!,
-            settings.playlistType,
-            settings.playlistName
-        )
+        val outcome = app.container.channelRepository.refresh(playlist)
         return when {
             outcome is RefreshOutcome.Success -> Result.success()
             // Too large for this TV: trying again within minutes would only run it out of memory

@@ -1,6 +1,7 @@
 package com.fluxtv.app.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -8,12 +9,20 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.fluxtv.app.AppContainer
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.data.model.Channel
+import com.fluxtv.app.data.model.DiagnosticsEvent
 import com.fluxtv.app.data.repository.RefreshOutcome
+import com.fluxtv.app.data.settings.DEFAULT_PLAYLIST_NAME
 import com.fluxtv.app.data.settings.FluxSettings
+import com.fluxtv.app.data.settings.SavedPlaylist
+import com.fluxtv.app.data.settings.newPlaylistId
 import com.fluxtv.app.playback.FluxPlayerController
 import com.fluxtv.app.playback.NetworkStatus
 import com.fluxtv.app.playback.PlaybackPhase
 import com.fluxtv.app.playback.PlaybackStatus
+import com.fluxtv.app.setup.AddStatus
+import com.fluxtv.app.setup.PhoneSetupServer
+import com.fluxtv.app.setup.localNetworkAddress
+import com.fluxtv.app.setup.tvDisplayName
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +41,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class AppMode { STARTING, EASY, ADMIN }
 enum class EasyOverlay { NONE, CHANNEL_LIST, NUMBER_ENTRY }
@@ -49,6 +59,27 @@ const val BROWSE_ALL = "\u0000all"
  */
 private fun groupsOf(sorted: List<Channel>): Map<String, List<Channel>> =
     sorted.filter { !it.group.isNullOrBlank() }.groupBy { it.group!! }
+
+/**
+ * The channels Easy Mode steps through: the favorites in favorites-only mode, unless the playlist in
+ * use has none. Favorites belong to their playlist, and a playlist just put in use with none of its
+ * own would otherwise leave nothing on screen at all.
+ */
+private fun lineupOf(channels: List<Channel>, favorites: Set<String>, favoritesOnly: Boolean): List<Channel> =
+    if (!favoritesOnly) channels else channels.filter { it.stableId in favorites }.ifEmpty { channels }
+
+/**
+ * The phone setup session, while Settings shows its QR code. [address] is what the code holds: null
+ * while it starts, and when the TV has no network address or no port. [ended]: the session is over
+ * (time ran out, or FluxTV left the screen) and the phone page no longer answers.
+ */
+data class PhoneSetup(
+    val address: String? = null,
+    val tvName: String,
+    val tvCode: String,
+    val starting: Boolean = true,
+    val ended: Boolean = false
+)
 
 data class UiState(
     val mode: AppMode = AppMode.STARTING,
@@ -70,19 +101,26 @@ data class UiState(
     val isRefreshing: Boolean = false,
     val lastRefreshMessage: String? = null,
     /** A playlist is set but none could be loaded, and none was saved before: FluxTV keeps trying. */
-    val firstLoadFailed: Boolean = false
+    val firstLoadFailed: Boolean = false,
+    /** How adding the last playlist went (Settings, and the phone page). */
+    val addStatus: AddStatus? = null,
+    val phoneSetup: PhoneSetup? = null
 ) {
     /** Channels the Viewer may reach in Easy Mode (favorites-only aware), ordered by number. */
     val lineup: List<Channel>
-        get() = if (favoritesOnly) channels.filter { it.stableId in favorites } else channels
+        get() = lineupOf(channels, favorites, favoritesOnly)
 
     /** Category (playlist group) of the channel being watched, if it has one. */
     val currentGroup: String?
         get() = currentChannel?.group?.takeIf { it.isNotBlank() }
 
-    /** Category the channel list opens on: Favorites in favorites-only mode, else the watched channel's. */
+    /**
+     * Category the channel list opens on: Favorites in favorites-only mode (if this playlist has any),
+     * else the watched channel's.
+     */
     val browseStartKey: String
-        get() = if (favoritesOnly) BROWSE_FAVORITES else currentGroup ?: BROWSE_ALL
+        get() = if (favoritesOnly && channels.any { it.stableId in favorites }) BROWSE_FAVORITES
+        else currentGroup ?: BROWSE_ALL
 }
 
 /**
@@ -112,6 +150,11 @@ class AppViewModel(
     private var resumed = false
     private var videoSurfaceReady = false
     private var retuneWhenOnScreen = false
+
+    /** Set while a playlist is being added, so a phone cannot send a second one meanwhile. */
+    private val adding = AtomicBoolean(false)
+    private var phoneServer: PhoneSetupServer? = null
+    private var phoneSessionJob: Job? = null
 
     init {
         container.networkMonitor.start()
@@ -161,9 +204,10 @@ class AppViewModel(
                     startupMessage = "Starting television…"
                 )
             }
-            withContext(Dispatchers.IO) { container.channelRepository.loadFromCache() }
+            withContext(Dispatchers.IO) { container.channelRepository.loadFromCache(s.activePlaylistId) }
 
-            if (!s.isConfigured) {
+            val playlist = s.activePlaylist?.takeIf { s.isConfigured }
+            if (playlist == null) {
                 // First run: an administrator must add a playlist before there is anything to watch.
                 _state.update { it.copy(mode = AppMode.ADMIN) }
                 return@launch
@@ -177,9 +221,7 @@ class AppViewModel(
                 // only (REQ-START-006/007); then Easy Mode opens, with Settings reachable, while it
                 // carries on, and the channel is tuned when it lands. Awaiting it, rather than the
                 // download itself, is what lets the wait end on time: the download cannot be cut short.
-                val loading = async {
-                    container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
-                }
+                val loading = async { container.channelRepository.refresh(playlist) }
                 firstLoad = withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { loading.await() }
                 if (firstLoad == null) {
                     _state.update { it.copy(mode = AppMode.EASY, isRefreshing = true) }
@@ -202,13 +244,16 @@ class AppViewModel(
 
             // Started from the cache: pick up provider updates in the background. After a first load
             // the playlist has just been fetched, and is not fetched twice.
-            if (startedFromCache) launch { refreshAfterStart(s) }
+            if (startedFromCache) launch { refreshAfterStart(s.refreshIntervalHours) }
         }
     }
 
-    /** Tunes the channel FluxTV starts on: the one watched last, else the first of the lineup. */
+    /**
+     * Tunes the channel FluxTV starts on: the one last watched in the playlist in use, else the first
+     * of the lineup. Each playlist remembers its own.
+     */
     private fun tuneStartChannel(s: FluxSettings, sorted: List<Channel>) {
-        val lineup = if (s.favoritesOnly) sorted.filter { it.stableId in s.favorites } else sorted
+        val lineup = lineupOf(sorted, s.favorites, s.favoritesOnly)
         if (lineup.isEmpty()) return
         val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
         if (resumed && _state.value.mode == AppMode.EASY) tuneTo(target) else tuneWhenBack(target)
@@ -230,8 +275,10 @@ class AppViewModel(
                 while (true) {
                     awaitRetry(waitMs)
                     waitMs = (waitMs * 2).coerceAtMost(FIRST_LOAD_RETRY_MAX_MS)
+                    // The playlist in use, then: never another one in its place (REQ-NET, Easy Mode
+                    // protection), however long this lasts.
                     val s = container.settingsRepository.settings.first()
-                    if (s.isConfigured) container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+                    if (s.isConfigured) s.activePlaylist?.let { container.channelRepository.refresh(it) }
                 }
             }
             val loaded = _state.first { it.channels.isNotEmpty() }.channels
@@ -268,15 +315,17 @@ class AppViewModel(
      * than the refresh interval is left to the periodic job; an older one is refreshed once the
      * channel plays (or has had a minute to), and a little after.
      */
-    private suspend fun refreshAfterStart(s: FluxSettings) {
+    private suspend fun refreshAfterStart(intervalHours: Int) {
         val ageMs = System.currentTimeMillis() - container.channelRepository.lastUpdatedMs.value
         // A TV's clock can be wrong until it has synced after power-on: an age below zero is unknown.
-        if (ageMs in 0 until s.refreshIntervalHours * HOUR_MS) return
+        if (ageMs in 0 until intervalHours * HOUR_MS) return
         withTimeoutOrNull(FIRST_PLAY_WAIT_MS) {
             container.playerController.status.first { it.phase == PlaybackPhase.PLAYING }
         }
         delay(STARTUP_REFRESH_DELAY_MS)
-        container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+        // Read again: Settings may have changed the playlist's link meanwhile, or put another in use.
+        val playlist = container.settingsRepository.settings.first().activePlaylist ?: return
+        container.channelRepository.refresh(playlist)
     }
 
     // ---------- tuning ----------
@@ -309,10 +358,12 @@ class AppViewModel(
      */
     private fun saveLastChannel(delayMs: Long) {
         val id = currentChannelId ?: return
+        // Kept with the playlist the channel is from, even if another is put in use meanwhile.
+        val playlistId = container.channelRepository.playlistId ?: return
         lastChannelJob?.cancel()
         lastChannelJob = viewModelScope.launch {
             delay(delayMs)
-            container.settingsRepository.setLastChannel(id)
+            container.settingsRepository.setLastChannel(playlistId, id)
         }
     }
 
@@ -400,8 +451,10 @@ class AppViewModel(
 
     // ---------- favorites ----------
 
+    /** Favorites belong to the playlist the channel is from. */
     fun toggleFavorite(channel: Channel) {
-        viewModelScope.launch { container.settingsRepository.toggleFavorite(channel.stableId) }
+        val playlistId = container.channelRepository.playlistId ?: return
+        viewModelScope.launch { container.settingsRepository.toggleFavorite(playlistId, channel.stableId) }
     }
 
     // ---------- recovery (REQ-REC-005) ----------
@@ -417,6 +470,7 @@ class AppViewModel(
     }
 
     fun exitAdmin() {
+        stopPhoneSetup()
         _state.update { it.copy(mode = AppMode.EASY) }
         if (retuneIfReturning()) return
         // Settings took the video surface away, so the channel is re-tuned once the new one is in
@@ -428,28 +482,244 @@ class AppViewModel(
         }
     }
 
-    fun savePlaylist(url: String, name: String, type: String) {
+    // ---------- playlists (Settings → Playlists) ----------
+
+    /** A screen of Settings → Playlists has opened: what the last one said is not carried over. */
+    fun clearPlaylistMessages() = _state.update { st ->
+        st.copy(lastRefreshMessage = null, addStatus = st.addStatus.takeIf { it == AddStatus.Checking })
+    }
+
+    /** A link (or a file path) typed on the TV. */
+    fun addTypedPlaylist(link: String, name: String, type: String) {
+        startAdd(link.trim(), name, type, fromPhone = false)
+    }
+
+    /**
+     * Checks [link] and saves it as a new playlist. Called on the phone page's thread too: false when
+     * another link is still being checked. The result goes to [UiState.addStatus], which the phone
+     * reads, and [AddStatus.Checking] is there before this returns, for the phone's next request.
+     */
+    private fun startAdd(link: String, name: String, type: String, fromPhone: Boolean): Boolean {
+        if (!adding.compareAndSet(false, true)) return false
+        _state.update { it.copy(addStatus = AddStatus.Checking) }
         viewModelScope.launch {
-            val cleanName = name.trim().ifBlank { "My Playlist" }
-            // Another provider's channels are numbered from scratch, not after the old list's last one.
-            val sameSource = url.trim() == _state.value.settings.playlistUrl
-            container.settingsRepository.setPlaylist(url.trim(), cleanName, type)
+            try {
+                val result = addPlaylist(link, name, type, fromPhone)
+                _state.update { it.copy(addStatus = result) }
+            } finally {
+                adding.set(false)
+            }
+        }
+        return true
+    }
+
+    /**
+     * A playlist is saved only once it has loaded, so a link that does not work changes nothing. It is
+     * not put in use either, unless it is the first: then there is nothing it could replace, and TV
+     * starts on it. Replacing a playlist in use takes "Use this playlist".
+     */
+    private suspend fun addPlaylist(link: String, name: String, type: String, fromPhone: Boolean): AddStatus {
+        if (link.isEmpty()) return AddStatus.Failed("Enter the playlist link first.")
+        if (fromPhone && !link.startsWith("http://", ignoreCase = true) && !link.startsWith("https://", ignoreCase = true)) {
+            return AddStatus.Failed("That is not a playlist link: a playlist link starts with http:// or https://.")
+        }
+        val s = container.settingsRepository.settings.first()
+        s.playlists.firstOrNull { it.url == link }?.let { return AddStatus.AlreadySaved(it.id, it.name) }
+
+        val playlist = SavedPlaylist(
+            id = newPlaylistId(),
+            name = name.trim().ifBlank { defaultName(link, s.playlists) },
+            url = link,
+            type = type
+        )
+        val first = s.activePlaylist == null
+        val outcome = if (first) container.channelRepository.activate(playlist)
+        else container.channelRepository.check(link, type)
+        if (outcome !is RefreshOutcome.Success) {
+            val problem = describeProblem(outcome as RefreshOutcome.Failed)
+            log("Could not add “${playlist.name}”${if (fromPhone) " from a phone" else ""}: ${outcome.reason}")
+            return AddStatus.Failed(problem)
+        }
+        container.settingsRepository.addPlaylist(playlist, activate = first)
+        log(
+            "Added “${playlist.name}”${if (fromPhone) " from a phone" else ""} (${outcome.count} channels)" +
+                if (first) ", now in use" else ""
+        )
+        if (first) {
+            _state.update { it.copy(firstLoadFailed = false, lastRefreshMessage = null) }
+            tuneActivePlaylist()
+        }
+        return AddStatus.Added(playlist.id, playlist.name, outcome.count, inUse = first)
+    }
+
+    /** The provider's address ("provider.tv"), which tells playlists apart better than a number. */
+    private fun defaultName(link: String, saved: List<SavedPlaylist>): String {
+        val host = runCatching { Uri.parse(link).host }.getOrNull()?.removePrefix("www.")
+        val base = host?.takeIf { it.isNotBlank() } ?: DEFAULT_PLAYLIST_NAME
+        if (saved.none { it.name == base }) return base
+        var n = 2
+        while (saved.any { it.name == "$base ($n)" }) n++
+        return "$base ($n)"
+    }
+
+    /**
+     * "Use this playlist": it is loaded first, and only once it has loaded does it replace the one in
+     * use, so a playlist that will not load leaves TV as it was. Back in Easy Mode, TV resumes this
+     * playlist's own last channel, else its first.
+     */
+    fun usePlaylist(id: String) {
+        val s = _state.value.settings
+        val playlist = s.playlists.firstOrNull { it.id == id } ?: return
+        // Busy, here, before anything is launched: OK pressed twice must not switch twice.
+        if (_state.value.isRefreshing || playlist.id == s.activePlaylistId) return
+        _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
+        viewModelScope.launch {
+            val outcome = container.channelRepository.activate(playlist)
+            val message = when (outcome) {
+                is RefreshOutcome.Success -> {
+                    container.settingsRepository.setActivePlaylist(playlist.id)
+                    log("Now using “${playlist.name}” (${outcome.count} channels)")
+                    tuneActivePlaylist()
+                    "Now using “${playlist.name}”: ${outcome.count} channels."
+                }
+                is RefreshOutcome.Failed -> {
+                    log("Could not switch to “${playlist.name}”: ${outcome.reason}")
+                    describeProblem(outcome) + (s.activePlaylist?.let { " Still using “${it.name}”." } ?: "")
+                }
+            }
+            _state.update { it.copy(isRefreshing = false, lastRefreshMessage = message) }
+        }
+    }
+
+    /** Chooses the channel to resume once Settings is left: the one last watched in the playlist in use. */
+    private suspend fun tuneActivePlaylist() {
+        val s = container.settingsRepository.settings.first()
+        val sorted = withContext(Dispatchers.Default) { container.channelRepository.channels.value.sortedBy { it.number } }
+        tuneStartChannel(s, sorted)
+    }
+
+    fun renamePlaylist(id: String, name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch { container.settingsRepository.renamePlaylist(id, clean) }
+    }
+
+    /**
+     * A new link for a saved playlist, kept only once it has loaded. For the playlist in use, its
+     * channels are replaced there and then; another one is only checked.
+     */
+    fun editPlaylistLink(id: String, link: String, type: String) {
+        val newLink = link.trim()
+        val s = _state.value.settings
+        val playlist = s.playlists.firstOrNull { it.id == id } ?: return
+        if (newLink.isEmpty() || _state.value.isRefreshing) return
+        if (newLink == playlist.url && type == playlist.type) return
+        s.playlists.firstOrNull { it.id != id && it.url == newLink }?.let { other ->
+            _state.update { it.copy(lastRefreshMessage = "This link is already saved, as “${other.name}”.") }
+            return
+        }
+        _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
+        viewModelScope.launch {
+            val inUse = id == s.activePlaylistId
+            val edited = playlist.copy(url = newLink, type = type)
+            val outcome = if (inUse) container.channelRepository.activate(edited)
+            else container.channelRepository.check(newLink, type)
+            val message = when (outcome) {
+                is RefreshOutcome.Success -> {
+                    container.settingsRepository.setPlaylistLink(id, newLink, type)
+                    log("New link for “${playlist.name}” (${outcome.count} channels)")
+                    "Link saved: ${outcome.count} channels."
+                }
+                is RefreshOutcome.Failed -> describeProblem(outcome) + " The link was not changed."
+            }
+            _state.update { it.copy(isRefreshing = false, lastRefreshMessage = message) }
+        }
+    }
+
+    /** Deletes a saved playlist; the one in use cannot be, until another is put in use. */
+    fun deletePlaylist(id: String) {
+        viewModelScope.launch {
+            val name = container.settingsRepository.settings.first().playlists.firstOrNull { it.id == id }?.name
+            if (container.settingsRepository.deletePlaylist(id)) {
+                log("Deleted “$name”")
+                _state.update { it.copy(lastRefreshMessage = "Deleted “$name”.") }
+            }
+        }
+    }
+
+    fun refreshNow() {
+        val playlist = _state.value.settings.activePlaylist ?: return
+        if (_state.value.isRefreshing) return
+        viewModelScope.launch {
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
-            val outcome = container.channelRepository.refresh(url.trim(), type, cleanName, keepNumbers = sameSource)
+            val outcome = container.channelRepository.refresh(playlist)
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
             recoverIfNothingLoaded(outcome)
         }
     }
 
-    fun refreshNow() {
-        val s = _state.value.settings
-        if (!s.isConfigured) return
-        viewModelScope.launch {
-            _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
-            val outcome = container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
-            _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
-            recoverIfNothingLoaded(outcome)
+    // ---------- phone setup ----------
+
+    /**
+     * Opens the setup session behind the QR code: the phone page answers until [stopPhoneSetup], for
+     * at most [PHONE_SETUP_MS], and while FluxTV stays on screen.
+     */
+    fun startPhoneSetup() {
+        stopPhoneSetup()
+        val app = getApplication<Application>()
+        val tvName = tvDisplayName(app)
+        val server = PhoneSetupServer(
+            tvName = tvName,
+            status = { _state.value.addStatus },
+            submit = { link, name -> startAdd(link, name, "url", fromPhone = true) }
+        )
+        phoneServer = server
+        _state.update {
+            it.copy(
+                phoneSetup = PhoneSetup(tvName = tvName, tvCode = server.tvCode),
+                addStatus = it.addStatus.takeIf { status -> status == AddStatus.Checking }
+            )
         }
+        phoneSessionJob = viewModelScope.launch {
+            val address = withContext(Dispatchers.IO) {
+                val host = localNetworkAddress(app)
+                val port = if (host != null) server.start() else null
+                if (host != null && port != null) "http://$host:$port/${server.token}" else null
+            }
+            _state.update { it.copy(phoneSetup = it.phoneSetup?.copy(address = address, starting = false)) }
+            if (address == null) {
+                server.stop()
+                phoneServer = null
+                return@launch
+            }
+            log("Phone setup started")
+            delay(PHONE_SETUP_MS)
+            endPhoneSetup()
+        }
+    }
+
+    /** The session is over, but its screen stays, saying so, with a way to start a new one. */
+    private fun endPhoneSetup() {
+        val server = phoneServer ?: return
+        phoneSessionJob?.cancel()
+        server.stop()
+        phoneServer = null
+        _state.update { it.copy(phoneSetup = it.phoneSetup?.copy(ended = true)) }
+        log("Phone setup ended")
+    }
+
+    /** The QR screen has been left: the phone page stops answering. */
+    fun stopPhoneSetup() {
+        phoneSessionJob?.cancel()
+        phoneSessionJob = null
+        phoneServer?.stop()
+        phoneServer = null
+        _state.update { it.copy(phoneSetup = null) }
+    }
+
+    private fun log(message: String) {
+        // Playlist names only: a link can hold the provider's user name and password.
+        container.diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), null, "playlist", message))
     }
 
     /** A playlist entered in Settings that would not load, with no channels to fall back on, is retried. */
@@ -508,6 +778,19 @@ class AppViewModel(
         }
     }
 
+    /** Why a playlist would not load, in plain words, for Settings and the phone page alike. */
+    private fun describeProblem(outcome: RefreshOutcome.Failed): String = when {
+        outcome.tooLarge -> "The playlist is too large for this TV's memory."
+        outcome.noChannels -> "The link opened, but there are no channels in it. Check that it is an M3U playlist link."
+        outcome.httpCode == 401 || outcome.httpCode == 403 ->
+            "The provider refused the link. Check the user name and password in it, and that the subscription is active."
+        outcome.httpCode == 404 || outcome.httpCode == 410 ->
+            "The provider has no playlist at this link. Check that the link is complete."
+        outcome.httpCode != null ->
+            "The provider's server did not send the playlist (error ${outcome.httpCode}). Try again later."
+        else -> "The TV could not open the link. Check that it is complete, and that the TV is connected to the internet."
+    }
+
     private fun describe(outcome: RefreshOutcome): String = when (outcome) {
         is RefreshOutcome.Success -> "Loaded ${outcome.count} channels."
         is RefreshOutcome.Failed -> when {
@@ -540,6 +823,8 @@ class AppViewModel(
      */
     fun onActivityStop() {
         resumed = false
+        // A setup session lasts only while its screen is on the TV.
+        endPhoneSetup()
         if (_state.value.currentChannel != null) retuneWhenOnScreen = true
         container.playerController.onStop()
         // Standby can be followed by the power going off: a channel still waiting to be saved is
@@ -602,6 +887,7 @@ class AppViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        stopPhoneSetup()
         bannerJob?.cancel()
         numberJob?.cancel()
         transientJob?.cancel()
@@ -628,6 +914,9 @@ class AppViewModel(
 
         /** How long a channel has to stay on before it is remembered for the next start. */
         private const val LAST_CHANNEL_SAVE_DELAY_MS = 3_000L
+
+        /** How long the phone page answers after the QR code is shown. */
+        private const val PHONE_SETUP_MS = 15 * 60_000L
 
         fun factory(app: FluxTvApplication) = viewModelFactory {
             initializer { AppViewModel(app, app.container) }

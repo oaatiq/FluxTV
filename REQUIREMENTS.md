@@ -1,7 +1,8 @@
 # FluxTV — Requirements traceability
 
 How each requirement in the *FluxTV: Basic Product & System Requirements Specification* (plus the
-added **Hardware resource utilization** section) is met in this implementation.
+added **Hardware resource utilization**, **Smartphone playlist setup** and **Multiple-playlist
+management** sections) is met in this implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
@@ -59,16 +60,19 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-CH-007** — a dead channel is just a row; the list stays usable.
 - **REQ-FAV-001/002** — favorites via hold-OK (Easy Mode) or the admin Channels screen.
 - **REQ-FAV-003** — *favorites-only* Easy Mode (`SettingsRepository.favoritesOnly`, lineup filter).
+  Favorites belong to the playlist in use; one with none shows all its channels (`lineupOf`) rather
+  than an empty screen.
 
 ## 10. Playlist
 - **REQ-PL-001/002** — `M3uParser` + `PlaylistFetcher` accept M3U from URL, file, or content URI.
-- **REQ-PL-003** — source persisted in DataStore; parsed list cached as JSON, written through
-  `AtomicFile` so a power cut mid-write keeps the previous list (`PlaylistCache`).
-- **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action; one
-  refresh runs at a time, and the playlist is parsed as it downloads, never held as one string. The
-  interval chosen in Preferences survives restarts. Repeated values (group titles, logos, tvg-ids)
-  share one copy, and a playlist too large for the TV's memory fails the refresh, keeping the
-  channels already loaded, instead of closing FluxTV.
+- **REQ-PL-003** — saved playlists and the one in use persisted in DataStore (`SavedPlaylist`); the
+  one in use's parsed list cached as JSON, tagged with its playlist, written through `AtomicFile` so
+  a power cut mid-write keeps the previous list (`PlaylistCache`).
+- **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes the playlist in use periodically with no
+  Viewer action; one refresh runs at a time, and the playlist is parsed as it downloads, never held
+  as one string. The interval chosen in Preferences survives restarts. Repeated values (group titles,
+  logos, tvg-ids) share one copy, and a playlist too large for the TV's memory fails the refresh,
+  keeping the channels already loaded, instead of closing FluxTV.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
 - **REQ-PL-006/007** — tolerant parser skips malformed entries; exact repeats (same tvg-id, name and
   address) are dropped, while versions of a channel that share a tvg-id (HD, FHD, SD) are all kept.
@@ -79,6 +83,58 @@ added **Hardware resource utilization** section) is met in this implementation.
   read before names kept their commas (`M3uEntry.idName`), so no identity changed with that fix.
   Loading a different playlist address numbers its channels afresh; the channel on screen follows
   the playlist (a new address after a refresh, or the new provider's first channel).
+
+## Smartphone playlist setup (added section)
+- **Add or replace a playlist from a phone, never typing the link on the TV** — Settings →
+  Playlists → *Add channels using your phone* (`ui/admin/AdminScreen.kt`, `PhoneSetupSection`) shows
+  a QR code ("Scan with your phone to add channels.") for a page served by the TV itself
+  (`setup/PhoneSetupServer.kt`): *Playlist link*, optional *Name*, *Send to TV*, and the TV's name
+  and a four-digit TV code that the TV screen also shows.
+- **Checked, with success or a plain-language error on both devices** — `AppViewModel.addPlaylist`
+  downloads and reads the playlist (`ChannelRepository.check`) before saving it; the outcome
+  (`setup/AddStatus.kt`) is shown in Settings and on the phone, worded by `describeProblem`. On
+  success the playlist's channels and categories are available (at once for the first playlist,
+  through *Use this playlist* for any other).
+- **No app on the phone** — plain HTML in any browser, no script.
+- **An invalid or inaccessible playlist does not replace the working list** — nothing is saved or
+  changed unless it loaded; the phone gets the link back in the form to correct it.
+- **Replacing a playlist takes an explicit administrator action** — a playlist added while another
+  is in use is only saved; *Use this playlist* is the switch.
+- **Only during an administrator-authorized setup session** — the page answers only while the QR
+  screen is open in Settings (behind hold OK / MENU and the optional PIN), for 15 minutes at most,
+  and not once FluxTV leaves the screen (`AppViewModel.startPhoneSetup`, `endPhoneSetup`). Every
+  address carries a random code that only the QR code holds; a new session gets a new one.
+- **Playlist links never shown in Easy Mode** — they appear only in Settings; the diagnostics history
+  records playlist names, never links.
+- **No phone needed afterwards** — the playlist is saved on the TV and refreshed by the TV.
+
+## Multiple-playlist management (added section)
+- **Save, name and manage several playlists in Administrator Mode → Settings → Playlists only** —
+  `SavedPlaylist` list in `SettingsRepository`; `PlaylistsSection` lists them with the one in use
+  marked *IN USE*; `PlaylistSection` offers *Use this playlist*, *Rename*, *Change link* and *Delete*.
+  Added from the phone (or typed), with a name chosen there or the provider's address by default.
+- **One playlist in use; never combined** — `FluxSettings.activePlaylist`; `ChannelRepository` holds
+  one playlist's channels (`playlistId`) and refuses to refresh any other into them.
+- **Adding does not activate** — except the very first playlist, which has nothing to replace.
+- **Checked before activation; failure leaves the active playlist unchanged** —
+  `AppViewModel.usePlaylist` → `ChannelRepository.activate`, which replaces the channels only once the
+  new playlist has loaded; the setting follows only on success.
+- **After activation, only the new playlist's channels and categories** — the channel list is built
+  from the repository's channels, numbered afresh for the new playlist.
+- **Favorites and last channel kept per playlist** — stored inside each `SavedPlaylist`, written for
+  the playlist the channel came from (`saveLastChannel`, `toggleFavorite`).
+- **Resume that playlist's last channel, else its first** — `tuneActivePlaylist` → `tuneStartChannel`
+  when leaving Settings.
+- **Active playlist remembered after restart** — `active_playlist` in DataStore; the cache is used
+  only if it is that playlist's (`loadFromCache`).
+- **Deleting the active playlist needs another activated first** — `SettingsRepository.deletePlaylist`
+  refuses it, and Settings offers no Delete for it.
+- **Easy Mode protection** — no playlist names, links or choices outside Settings; channel navigation
+  stays within the playlist in use; failed playback and first-load retries only ever retry the
+  playlist in use; the Viewer is never asked to choose.
+- **Upgrade** — `SinglePlaylistMigration` turns the single playlist of earlier versions into the
+  first saved playlist, in use, with its favorites and last channel (REQ-UPD-001/002).
+- **Acceptance test** — README → Acceptance testing → *Multiple playlists*.
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
@@ -139,7 +195,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   memory and saved one appended line per event (the file is compacted at twice its 300-event cap).
 - **REQ-CFG-001..005** — admin behind hold-OK/MENU and optional PIN; no config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
-- **REQ-SEC-001..005** — credentials never shown to the Viewer; minimal permissions (INTERNET,
+- **REQ-SEC-001..005** — credentials never shown to the Viewer, nor written to the diagnostics
+  history; the phone setup page answers only during a setup session and only under its random code;
+  minimal permissions (INTERNET,
   ACCESS_NETWORK_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, and SYSTEM_ALERT_WINDOW purely as the
   platform's exemption for opening itself when the TV turns on — never used to draw an overlay, and
   off until an administrator grants it); no analytics/telemetry.

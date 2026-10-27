@@ -6,6 +6,7 @@ import com.fluxtv.app.data.m3u.M3uEntry
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.remote.FetchResult
 import com.fluxtv.app.data.remote.PlaylistFetcher
+import com.fluxtv.app.data.settings.SavedPlaylist
 import com.fluxtv.app.util.sha1Hex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,15 +19,29 @@ import kotlinx.coroutines.withContext
 sealed class RefreshOutcome {
     data class Success(val count: Int) : RefreshOutcome()
 
-    /** [tooLarge]: the playlist did not fit in the memory this TV gives FluxTV. */
-    data class Failed(val reason: String, val keptExisting: Boolean, val tooLarge: Boolean = false) : RefreshOutcome()
+    /**
+     * [tooLarge]: the playlist did not fit in the memory this TV gives FluxTV. [httpCode]: the
+     * provider's server answered with this error. [noChannels]: it opened, but held no channels.
+     */
+    data class Failed(
+        val reason: String,
+        val keptExisting: Boolean,
+        val tooLarge: Boolean = false,
+        val httpCode: Int? = null,
+        val noChannels: Boolean = false
+    ) : RefreshOutcome()
 }
 
+/** A fetched playlist: its channels, or why there are none. */
+private class Fetched(val channels: List<Channel>?, val failure: RefreshOutcome.Failed?)
+
 /**
- * Single source of truth for the channel line-up.
+ * Single source of truth for the channel line-up, which is always one saved playlist's: channels of
+ * different playlists are never combined.
  *
  * Refreshing never destroys a previously valid playlist on failure (REQ-PL-005) and preserves
- * channel numbering across refreshes by keying on [Channel.stableId] (REQ-PL-008).
+ * channel numbering across refreshes by keying on [Channel.stableId] (REQ-PL-008). Another playlist
+ * replaces the channels only once it has loaded.
  */
 class ChannelRepository(
     private val cache: PlaylistCache,
@@ -38,15 +53,28 @@ class ChannelRepository(
     private val _lastUpdatedMs = MutableStateFlow(0L)
     val lastUpdatedMs: StateFlow<Long> = _lastUpdatedMs.asStateFlow()
 
+    /** The saved playlist [channels] are from, which favorites and the last channel are kept for. */
+    @Volatile
+    var playlistId: String? = null
+        private set
+
     /**
      * One refresh at a time. The start-up refresh, the periodic job (overdue after the TV was off, it
      * can run at boot too) and Settings can otherwise overlap: each holds a whole playlist in memory
-     * while it works, and each merges into the list the other one is replacing.
+     * while it works, and each merges into the list the other one is replacing. Checking a playlist
+     * and switching to one hold it too.
      */
     private val refreshLock = Mutex()
 
-    fun loadFromCache() {
+    /**
+     * Starts from the saved channels if they are [activeId]'s. A switch to another playlist that the
+     * power cut short can leave the other one's channels in the cache, and those are not shown.
+     */
+    fun loadFromCache(activeId: String?) {
+        if (activeId == null) return
         val cached = cache.load() ?: return
+        if (cached.playlistId != null && cached.playlistId != activeId) return
+        playlistId = activeId
         _channels.value = sharingRepeats(cached.channels)
         _lastUpdatedMs.value = cached.updatedAtMs
     }
@@ -70,45 +98,70 @@ class ChannelRepository(
     }
 
     /**
-     * Fetches [source] and merges it into the lineup. With [keepNumbers] false (another provider's
-     * playlist) the channels are numbered afresh instead of after the old list's highest number.
+     * Fetches [playlist] again and merges it into the channels, keeping their numbers. Only the
+     * playlist the channels are from is refreshed (or any, before one is loaded): a refresh asked for
+     * before another playlist was put in use must not bring the old one's channels back.
      */
-    suspend fun refresh(source: String, type: String, sourceName: String?, keepNumbers: Boolean = true): RefreshOutcome =
-        refreshLock.withLock {
-            withContext(Dispatchers.IO) {
-                val merged = try {
-                    when (val result = fetcher.fetch(source, type)) {
-                        is FetchResult.Failure -> return@withContext RefreshOutcome.Failed(
-                            result.reason,
-                            keptExisting = _channels.value.isNotEmpty()
-                        )
-
-                        is FetchResult.Success -> {
-                            if (result.entries.isEmpty()) {
-                                return@withContext RefreshOutcome.Failed(
-                                    "no channels parsed",
-                                    keptExisting = _channels.value.isNotEmpty()
-                                )
-                            }
-                            merge(if (keepNumbers) _channels.value else emptyList(), result.entries)
-                        }
-                    }
-                } catch (_: OutOfMemoryError) {
-                    // A playlist too large for this TV ends the refresh rather than FluxTV: what was read
-                    // of it is let go, and the channels already loaded stay.
-                    return@withContext RefreshOutcome.Failed(
-                        "playlist too large for the memory available",
-                        keptExisting = _channels.value.isNotEmpty(),
-                        tooLarge = true
-                    )
-                }
-                _channels.value = merged
-                val now = System.currentTimeMillis()
-                _lastUpdatedMs.value = now
-                cache.save(CachedPlaylist(merged, now, sourceName))
-                RefreshOutcome.Success(merged.size)
-            }
+    suspend fun refresh(playlist: SavedPlaylist): RefreshOutcome = refreshLock.withLock {
+        val loaded = playlistId
+        if (loaded != null && loaded != playlist.id) {
+            return@withLock RefreshOutcome.Failed("another playlist is in use", keptExisting = true)
         }
+        load(playlist, keepNumbers = true)
+    }
+
+    /**
+     * Puts [playlist] in place of the channels there are, once it has loaded: one that cannot be
+     * loaded leaves them as they are. Its channels are numbered afresh unless [keepNumbers] (the same
+     * playlist at a new address), not after the last number of another provider's list.
+     */
+    suspend fun activate(playlist: SavedPlaylist, keepNumbers: Boolean = false): RefreshOutcome =
+        refreshLock.withLock { load(playlist, keepNumbers) }
+
+    /** Fetches [source] to see that it loads, and how many channels it holds, without using it. */
+    suspend fun check(source: String, type: String): RefreshOutcome = refreshLock.withLock {
+        withContext(Dispatchers.IO) {
+            val fetched = fetch(source, type, emptyList())
+            fetched.channels?.let { RefreshOutcome.Success(it.size) } ?: fetched.failure!!
+        }
+    }
+
+    private suspend fun load(playlist: SavedPlaylist, keepNumbers: Boolean): RefreshOutcome =
+        withContext(Dispatchers.IO) {
+            val fetched = fetch(playlist.url, playlist.type, if (keepNumbers) _channels.value else emptyList())
+            val merged = fetched.channels ?: return@withContext fetched.failure!!
+            playlistId = playlist.id
+            _channels.value = merged
+            val now = System.currentTimeMillis()
+            _lastUpdatedMs.value = now
+            cache.save(CachedPlaylist(merged, now, playlist.name, playlist.id))
+            RefreshOutcome.Success(merged.size)
+        }
+
+    /** Fetches and parses [source], numbering its channels after those of [old] that it still has. */
+    private fun fetch(source: String, type: String, old: List<Channel>): Fetched {
+        val keptExisting = _channels.value.isNotEmpty()
+        return try {
+            when (val result = fetcher.fetch(source, type)) {
+                is FetchResult.Failure ->
+                    Fetched(null, RefreshOutcome.Failed(result.reason, keptExisting, httpCode = result.httpCode))
+
+                is FetchResult.Success ->
+                    if (result.entries.isEmpty()) {
+                        Fetched(null, RefreshOutcome.Failed("no channels parsed", keptExisting, noChannels = true))
+                    } else {
+                        Fetched(merge(old, result.entries), null)
+                    }
+            }
+        } catch (_: OutOfMemoryError) {
+            // A playlist too large for this TV ends the refresh rather than FluxTV: what was read of it
+            // is let go, and the channels already loaded stay.
+            Fetched(
+                null,
+                RefreshOutcome.Failed("playlist too large for the memory available", keptExisting, tooLarge = true)
+            )
+        }
+    }
 
     /**
      * The identity of [e] in this playlist, or null when it repeats an entry already in [taken]
