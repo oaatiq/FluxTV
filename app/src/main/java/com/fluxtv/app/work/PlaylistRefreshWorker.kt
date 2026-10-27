@@ -38,9 +38,12 @@ class PlaylistRefreshWorker(
             settings.playlistType,
             settings.playlistName
         )
-        return when (outcome) {
-            is RefreshOutcome.Success -> Result.success()
-            is RefreshOutcome.Failed -> Result.retry()
+        return when {
+            outcome is RefreshOutcome.Success -> Result.success()
+            // Too large for this TV: trying again within minutes would only run it out of memory
+            // again, so it waits for the next scheduled refresh.
+            outcome is RefreshOutcome.Failed && outcome.tooLarge -> Result.success()
+            else -> Result.retry()
         }
     }
 

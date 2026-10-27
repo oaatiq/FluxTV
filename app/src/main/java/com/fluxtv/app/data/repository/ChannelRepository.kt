@@ -17,7 +17,9 @@ import kotlinx.coroutines.withContext
 
 sealed class RefreshOutcome {
     data class Success(val count: Int) : RefreshOutcome()
-    data class Failed(val reason: String, val keptExisting: Boolean) : RefreshOutcome()
+
+    /** [tooLarge]: the playlist did not fit in the memory this TV gives FluxTV. */
+    data class Failed(val reason: String, val keptExisting: Boolean, val tooLarge: Boolean = false) : RefreshOutcome()
 }
 
 /**
@@ -45,8 +47,26 @@ class ChannelRepository(
 
     fun loadFromCache() {
         val cached = cache.load() ?: return
-        _channels.value = cached.channels
+        _channels.value = sharingRepeats(cached.channels)
         _lastUpdatedMs.value = cached.updatedAtMs
+    }
+
+    /**
+     * The cache is read back with a copy of every value on every channel, while the parser has
+     * channels share one copy of a repeated group title, logo, user agent or referer. Shared here too,
+     * the list FluxTV starts from, and keeps until the next refresh, is as small as a refreshed one.
+     */
+    private fun sharingRepeats(channels: List<Channel>): List<Channel> {
+        val seen = HashMap<String, String>()
+        fun shared(s: String?): String? = if (s == null) null else seen.getOrPut(s) { s }
+        return channels.map {
+            it.copy(
+                logoUrl = shared(it.logoUrl),
+                group = shared(it.group),
+                userAgent = shared(it.userAgent),
+                referer = shared(it.referer)
+            )
+        }
     }
 
     /**
@@ -56,26 +76,37 @@ class ChannelRepository(
     suspend fun refresh(source: String, type: String, sourceName: String?, keepNumbers: Boolean = true): RefreshOutcome =
         refreshLock.withLock {
             withContext(Dispatchers.IO) {
-                when (val result = fetcher.fetch(source, type)) {
-                    is FetchResult.Failure ->
-                        RefreshOutcome.Failed(result.reason, keptExisting = _channels.value.isNotEmpty())
+                val merged = try {
+                    when (val result = fetcher.fetch(source, type)) {
+                        is FetchResult.Failure -> return@withContext RefreshOutcome.Failed(
+                            result.reason,
+                            keptExisting = _channels.value.isNotEmpty()
+                        )
 
-                    is FetchResult.Success -> {
-                        val entries = result.entries
-                        if (entries.isEmpty()) {
-                            return@withContext RefreshOutcome.Failed(
-                                "no channels parsed",
-                                keptExisting = _channels.value.isNotEmpty()
-                            )
+                        is FetchResult.Success -> {
+                            if (result.entries.isEmpty()) {
+                                return@withContext RefreshOutcome.Failed(
+                                    "no channels parsed",
+                                    keptExisting = _channels.value.isNotEmpty()
+                                )
+                            }
+                            merge(if (keepNumbers) _channels.value else emptyList(), result.entries)
                         }
-                        val merged = merge(if (keepNumbers) _channels.value else emptyList(), entries)
-                        _channels.value = merged
-                        val now = System.currentTimeMillis()
-                        _lastUpdatedMs.value = now
-                        cache.save(CachedPlaylist(merged, now, sourceName))
-                        RefreshOutcome.Success(merged.size)
                     }
+                } catch (_: OutOfMemoryError) {
+                    // A playlist too large for this TV ends the refresh rather than FluxTV: what was read
+                    // of it is let go, and the channels already loaded stay.
+                    return@withContext RefreshOutcome.Failed(
+                        "playlist too large for the memory available",
+                        keptExisting = _channels.value.isNotEmpty(),
+                        tooLarge = true
+                    )
                 }
+                _channels.value = merged
+                val now = System.currentTimeMillis()
+                _lastUpdatedMs.value = now
+                cache.save(CachedPlaylist(merged, now, sourceName))
+                RefreshOutcome.Success(merged.size)
             }
         }
 

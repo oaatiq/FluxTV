@@ -66,7 +66,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   `AtomicFile` so a power cut mid-write keeps the previous list (`PlaylistCache`).
 - **REQ-PL-004** — `work/PlaylistRefreshWorker` refreshes periodically with no Viewer action; one
   refresh runs at a time, and the playlist is parsed as it downloads, never held as one string. The
-  interval chosen in Preferences survives restarts.
+  interval chosen in Preferences survives restarts. Repeated values (group titles, logos, tvg-ids)
+  share one copy, and a playlist too large for the TV's memory fails the refresh, keeping the
+  channels already loaded, instead of closing FluxTV.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
 - **REQ-PL-006/007** — tolerant parser skips malformed entries; exact repeats (same tvg-id, name and
   address) are dropped, while versions of a channel that share a tvg-id (HD, FHD, SD) are all kept.

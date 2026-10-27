@@ -510,9 +510,13 @@ class AppViewModel(
 
     private fun describe(outcome: RefreshOutcome): String = when (outcome) {
         is RefreshOutcome.Success -> "Loaded ${outcome.count} channels."
-        is RefreshOutcome.Failed ->
-            if (outcome.keptExisting) "Could not update. Keeping the existing channels."
-            else "Could not load the playlist. Check the address and your connection."
+        is RefreshOutcome.Failed -> when {
+            outcome.tooLarge ->
+                "The playlist is too large for this TV's memory." +
+                    if (outcome.keptExisting) " Keeping the existing channels." else ""
+            outcome.keptExisting -> "Could not update. Keeping the existing channels."
+            else -> "Could not load the playlist. Check the address and your connection."
+        }
     }
 
     // ---------- lifecycle ----------

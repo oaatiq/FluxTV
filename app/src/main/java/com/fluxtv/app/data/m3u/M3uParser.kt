@@ -51,6 +51,12 @@ object M3uParser {
             tvgChno = null; userAgent = null; referer = null
         }
 
+        // A group title repeats for every channel of its group, and a logo or tvg-id for every
+        // version of a channel (HD, FHD, SD), but each line brought its own copy. Entries share one
+        // copy each instead: a refresh holds two playlists at once, the one on screen and the new one.
+        val seen = HashMap<String, String>()
+        fun shared(s: String?): String? = if (s == null) null else seen.getOrPut(s) { s }
+
         var first = true
         for (raw in reader.lineSequence()) {
             var line = raw.trim()
@@ -100,7 +106,8 @@ object M3uParser {
                         val entryIdName = idName?.takeIf { it.isNotBlank() } ?: url
                         out.add(
                             M3uEntry(
-                                entryName, url, logo, group, tvgId, tvgChno, userAgent, referer,
+                                entryName, url, shared(logo), shared(group), shared(tvgId), tvgChno,
+                                shared(userAgent), shared(referer),
                                 idName = entryIdName.takeIf { it != entryName }
                             )
                         )
