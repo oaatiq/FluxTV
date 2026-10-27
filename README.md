@@ -87,9 +87,10 @@ the network is back, and otherwise at growing intervals up to every 15 minutes. 
 when the channels arrive.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
-Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. A
-channel in a format FluxTV has no player for (RTSP, Smooth Streaming) shows *Unable to play this
-channel* rather than closing the app.
+Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. An
+HLS channel whose address does not end in `.m3u8` plays too: when the player cannot tell a stream's
+format, FluxTV tries it once as HLS. A channel in a format FluxTV has no player for (RTSP, Smooth
+Streaming) shows *Unable to play this channel* rather than closing the app.
 
 ## Start when the TV turns on
 

@@ -82,7 +82,9 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
   type with no player module (RTSP, Smooth Streaming) reads "Unable to play this channel" instead of
   closing the app (`FluxPlayerController.load`). Live TV never pauses itself when the audio output
-  changes (HDMI counts as one), and picking the channel already on screen plays it on.
+  changes (HDMI counts as one), and picking the channel already on screen plays it on. An address
+  whose format the player cannot recognise (HLS served without ".m3u8") is tried once as HLS, and
+  one that plays that way is opened as HLS for the rest of the session (`tryAsHls`).
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
   break the next.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.

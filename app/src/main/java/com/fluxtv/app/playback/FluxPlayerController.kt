@@ -1,14 +1,17 @@
 package com.fluxtv.app.playback
 
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
+import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -67,6 +70,15 @@ class FluxPlayerController(
     /** Whether this start of the channel has had its one retry after a decoder error. */
     private var decoderRetried = false
 
+    /** Whether this start of the channel has had its one try as HLS, see [tryAsHls]. */
+    private var hlsTried = false
+
+    /** Whether the channel is loaded as HLS, whatever its address looks like. */
+    private var loadAsHls = false
+
+    /** Addresses that only played once loaded as HLS: loaded that way from the start, this session. */
+    private val knownHls = HashSet<String>()
+
     private var retryJob: Job? = null
     private var bufferingWatchdog: Job? = null
     private var slowRetryJob: Job? = null
@@ -117,6 +129,8 @@ class FluxPlayerController(
         onScreen = true
         recovery.reset()
         decoderRetried = false
+        hlsTried = false
+        loadAsHls = channel.url in knownHls
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -159,6 +173,7 @@ class FluxPlayerController(
         slowRetryJob?.cancel()
         recovery.reset()
         decoderRetried = false
+        hlsTried = false
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         reprepareCurrent("manual retry")
     }
@@ -268,7 +283,10 @@ class FluxPlayerController(
      * channel change: such a channel is reported as one that cannot be played instead.
      */
     private fun load(p: ExoPlayer, channel: Channel): Boolean = try {
-        p.setMediaItem(MediaItem.fromUri(channel.url))
+        p.setMediaItem(
+            if (loadAsHls) MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            else MediaItem.fromUri(channel.url)
+        )
         p.prepare()
         // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back.
         p.playWhenReady = onScreen
@@ -306,6 +324,29 @@ class FluxPlayerController(
             reprepareCurrent("decoder error, trying once more")
         }
     }
+
+    /**
+     * Some IPTV addresses serve an HLS playlist without ".m3u8" in their path. The player then takes
+     * the stream for a single file, finds no format it can read in it, and the channel never played,
+     * however often it was retried. Such a channel gets one try as HLS, straight away and without
+     * using the retry budget; one that plays that way is loaded as HLS until FluxTV is closed.
+     */
+    private fun tryAsHls(): Boolean {
+        val channel = currentChannel ?: return false
+        if (hlsTried || loadAsHls) return false
+        // An address that does say what it is (.m3u8, .mpd) was opened as that already.
+        if (Util.inferContentType(Uri.parse(channel.url)) != C.CONTENT_TYPE_OTHER) return false
+        hlsTried = true
+        loadAsHls = true
+        logEvent("recovery", "Stream format of ${channel.name} not recognised: trying it as HLS")
+        reprepareCurrent("trying the stream as HLS")
+        return true
+    }
+
+    /** The address answered with something that does not read as an HLS playlist at all. */
+    private fun isNotHlsPlaylist(error: PlaybackException) =
+        error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+            error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
 
     private fun scheduleRetry(message: String, reason: String) {
         if (!recovery.canRetry()) {
@@ -467,6 +508,7 @@ class FluxPlayerController(
                     bundle?.channelSwitch?.pending = false
                     bufferingWatchdog?.cancel()
                     slowRetryJob?.cancel()
+                    if (loadAsHls) currentChannel?.let { knownHls.add(it.url) }
                     if (prepareStartMs > 0L) {
                         val startup = SystemClock.elapsedRealtime() - prepareStartMs
                         prepareStartMs = 0L
@@ -493,6 +535,9 @@ class FluxPlayerController(
             bufferingWatchdog?.cancel()
             stabilityJob?.cancel()
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && rejoinLive()) return
+            if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && tryAsHls()) return
+            // Not an HLS playlist after all: the retries that follow open the address as it is again.
+            if (loadAsHls && isNotHlsPlaylist(error)) loadAsHls = false
             val hasNetwork = networkMonitor.hasNetwork()
             val mapped = ErrorMapper.map(error, hasNetwork)
             logEvent("error", mapped.technical)
