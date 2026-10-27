@@ -88,9 +88,10 @@ when the channels arrive.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. An
-HLS channel whose address does not end in `.m3u8` plays too: when the player cannot tell a stream's
-format, FluxTV tries it once as HLS. A channel in a format FluxTV has no player for (RTSP, Smooth
-Streaming) shows *Unable to play this channel* rather than closing the app.
+HLS channel whose address does not end in `.m3u8` plays too: one ending in `.m3u` is opened as HLS
+straight away, and when the player cannot tell another stream's format, FluxTV tries it once as HLS.
+The playlist itself can be `.m3u` or `.m3u8` either way. A channel in a format FluxTV has no player
+for (RTSP, Smooth Streaming) shows *Unable to play this channel* rather than closing the app.
 
 ## Start when the TV turns on
 

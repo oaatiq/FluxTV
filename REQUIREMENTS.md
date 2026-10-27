@@ -86,7 +86,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   closing the app (`FluxPlayerController.load`). Live TV never pauses itself when the audio output
   changes (HDMI counts as one), and picking the channel already on screen plays it on. An address
   whose format the player cannot recognise (HLS served without ".m3u8") is tried once as HLS, and
-  one that plays that way is opened as HLS for the rest of the session (`tryAsHls`).
+  one that plays that way is opened as HLS for the rest of the session (`tryAsHls`). A ".m3u"
+  address is opened as HLS from its first try, and as it is if it turns out not to be HLS
+  (`firstTryAsHls`, `tryAsPlain`).
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
   break the next.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.

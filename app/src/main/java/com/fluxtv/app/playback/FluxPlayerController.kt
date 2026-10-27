@@ -73,11 +73,17 @@ class FluxPlayerController(
     /** Whether this start of the channel has had its one try as HLS, see [tryAsHls]. */
     private var hlsTried = false
 
+    /** Whether this start of the channel has opened its address as it is, see [tryAsPlain]. */
+    private var plainTried = false
+
     /** Whether the channel is loaded as HLS, whatever its address looks like. */
     private var loadAsHls = false
 
-    /** Addresses that only played once loaded as HLS: loaded that way from the start, this session. */
+    /** Addresses that played as HLS: opened that way from the start, until FluxTV is closed. */
     private val knownHls = HashSet<String>()
+
+    /** ".m3u" addresses that turned out not to be HLS: opened as they are from the start. */
+    private val knownPlain = HashSet<String>()
 
     private var retryJob: Job? = null
     private var bufferingWatchdog: Job? = null
@@ -129,8 +135,9 @@ class FluxPlayerController(
         onScreen = true
         recovery.reset()
         decoderRetried = false
-        hlsTried = false
-        loadAsHls = channel.url in knownHls
+        loadAsHls = firstTryAsHls(channel.url)
+        hlsTried = loadAsHls
+        plainTried = !loadAsHls
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -173,7 +180,8 @@ class FluxPlayerController(
         slowRetryJob?.cancel()
         recovery.reset()
         decoderRetried = false
-        hlsTried = false
+        hlsTried = loadAsHls
+        plainTried = !loadAsHls
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         reprepareCurrent("manual retry")
     }
@@ -343,6 +351,32 @@ class FluxPlayerController(
         return true
     }
 
+    /**
+     * Whether a channel's first try opens it as HLS: one that played that way before, and one whose
+     * address ends in ".m3u", the older name of an HLS playlist. Media3 only takes ".m3u8" for HLS and
+     * would open ".m3u" as a single file, which fails before [tryAsHls] gets its turn.
+     */
+    private fun firstTryAsHls(url: String): Boolean =
+        url in knownHls ||
+            (url !in knownPlain && url.substringBefore('?').substringBefore('#').endsWith(".m3u", ignoreCase = true))
+
+    /**
+     * Opened as HLS on its first try, and the answer is not an HLS playlist: the address is opened as
+     * it is, straight away and without a message, and from the start next time. One that has played
+     * as HLS before stays HLS, and its retries go on that way.
+     */
+    private fun tryAsPlain(): Boolean {
+        val channel = currentChannel ?: return false
+        if (!loadAsHls || channel.url in knownHls) return false
+        loadAsHls = false
+        knownPlain.add(channel.url)
+        if (plainTried) return false  // opened as it is already, this start: the error stands
+        plainTried = true
+        logEvent("recovery", "${channel.name} is not an HLS stream: opening its address as it is")
+        reprepareCurrent("opening the address as it is")
+        return true
+    }
+
     /** The address answered with something that does not read as an HLS playlist at all. */
     private fun isNotHlsPlaylist(error: PlaybackException) =
         error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
@@ -508,7 +542,7 @@ class FluxPlayerController(
                     bundle?.channelSwitch?.pending = false
                     bufferingWatchdog?.cancel()
                     slowRetryJob?.cancel()
-                    if (loadAsHls) currentChannel?.let { knownHls.add(it.url) }
+                    if (loadAsHls) currentChannel?.let { knownHls.add(it.url); knownPlain.remove(it.url) }
                     if (prepareStartMs > 0L) {
                         val startup = SystemClock.elapsedRealtime() - prepareStartMs
                         prepareStartMs = 0L
@@ -536,8 +570,8 @@ class FluxPlayerController(
             stabilityJob?.cancel()
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && rejoinLive()) return
             if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && tryAsHls()) return
-            // Not an HLS playlist after all: the retries that follow open the address as it is again.
-            if (loadAsHls && isNotHlsPlaylist(error)) loadAsHls = false
+            // Not an HLS playlist after all: the address is opened as it is again, now or by the retries.
+            if (isNotHlsPlaylist(error) && tryAsPlain()) return
             val hasNetwork = networkMonitor.hasNetwork()
             val mapped = ErrorMapper.map(error, hasNetwork)
             logEvent("error", mapped.technical)
