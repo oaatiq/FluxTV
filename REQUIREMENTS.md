@@ -70,10 +70,13 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-PL-005** — `ChannelRepository.refresh` keeps the previous list on failure.
 - **REQ-PL-006/007** — tolerant parser skips malformed entries; exact repeats (same tvg-id, name and
   address) are dropped, while versions of a channel that share a tvg-id (HD, FHD, SD) are all kept.
+  Names keep their commas ("Sport 1, HD"): the title starts at the first comma outside a quoted
+  attribute value.
 - **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash; a later channel with an already used tvg-id
-  gets both) preserve favorites & numbering on refresh. Loading a different playlist address numbers
-  its channels afresh; the channel on screen follows the playlist (a new address after a refresh, or
-  the new provider's first channel).
+  gets both) preserve favorites & numbering on refresh. The hash still uses the name as it was
+  read before names kept their commas (`M3uEntry.idName`), so no identity changed with that fix.
+  Loading a different playlist address numbers its channels afresh; the channel on screen follows
+  the playlist (a new address after a refresh, or the new provider's first channel).
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream

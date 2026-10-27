@@ -11,7 +11,13 @@ data class M3uEntry(
     val tvgId: String? = null,
     val tvgChno: Int? = null,
     val userAgent: String? = null,
-    val referer: String? = null
+    val referer: String? = null,
+    /**
+     * The name the entry's identity is worked out from, when it differs from [name]. Names used to be
+     * cut at their last comma ("Sport 1, HD" came out as "HD"); identities still use the cut form, so
+     * the favorites, numbers and last channel stored under them stay where they were.
+     */
+    val idName: String? = null
 )
 
 /**
@@ -32,6 +38,7 @@ object M3uParser {
         val out = ArrayList<M3uEntry>()
 
         var name: String? = null
+        var idName: String? = null
         var logo: String? = null
         var group: String? = null
         var tvgId: String? = null
@@ -40,7 +47,7 @@ object M3uParser {
         var referer: String? = null
 
         fun reset() {
-            name = null; logo = null; group = null; tvgId = null
+            name = null; idName = null; logo = null; group = null; tvgId = null
             tvgChno = null; userAgent = null; referer = null
         }
 
@@ -65,13 +72,9 @@ object M3uParser {
                         logo = attrs["tvg-logo"]?.ifBlank { null }
                         group = attrs["group-title"]?.ifBlank { null }
                         tvgChno = attrs["tvg-chno"]?.trim()?.toIntOrNull()
-                        val comma = line.lastIndexOf(',')
-                        val display = if (comma >= 0) line.substring(comma + 1).trim() else ""
-                        name = when {
-                            display.isNotBlank() -> display
-                            !attrs["tvg-name"].isNullOrBlank() -> attrs["tvg-name"]
-                            else -> null
-                        }
+                        val tvgName = attrs["tvg-name"]?.takeIf { it.isNotBlank() }
+                        name = titleAt(line, titleComma(line)) ?: tvgName
+                        idName = titleAt(line, line.lastIndexOf(',')) ?: tvgName
                     }
 
                     line.startsWith("#EXTGRP", ignoreCase = true) -> {
@@ -94,7 +97,13 @@ object M3uParser {
                     else -> {
                         val url = line
                         val entryName = name?.takeIf { it.isNotBlank() } ?: url
-                        out.add(M3uEntry(entryName, url, logo, group, tvgId, tvgChno, userAgent, referer))
+                        val entryIdName = idName?.takeIf { it.isNotBlank() } ?: url
+                        out.add(
+                            M3uEntry(
+                                entryName, url, logo, group, tvgId, tvgChno, userAgent, referer,
+                                idName = entryIdName.takeIf { it != entryName }
+                            )
+                        )
                         reset()
                     }
                 }
@@ -104,4 +113,25 @@ object M3uParser {
         }
         return out
     }
+
+    /**
+     * Where an #EXTINF line's title starts: the first comma outside a quoted attribute value. Values
+     * and titles can both hold commas of their own (group-title="News, World", "Sport 1, HD"), so
+     * neither the first comma nor the last will do. Should attributes follow that comma, it was in
+     * an unquoted value or the quotes do not pair up, and the last comma is taken, as it always was.
+     */
+    private fun titleComma(line: String): Int {
+        var quoted = false
+        for (i in line.indices) {
+            when (line[i]) {
+                '"' -> quoted = !quoted
+                ',' -> if (!quoted) return if (ATTR.find(line, i + 1) == null) i else line.lastIndexOf(',')
+            }
+        }
+        return line.lastIndexOf(',')
+    }
+
+    /** The title that starts after the comma at [comma], or null if there is none. */
+    private fun titleAt(line: String, comma: Int): String? =
+        if (comma < 0) null else line.substring(comma + 1).trim().takeIf { it.isNotBlank() }
 }

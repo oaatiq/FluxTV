@@ -90,7 +90,7 @@ class ChannelRepository(
      * qualified by a hash of them. The same tvg-id, name and address again is a duplicate.
      */
     private fun stableId(e: M3uEntry, taken: MutableSet<String>): String? {
-        val nameAndUrl = sha1Hex("${e.name}|${e.url}")
+        val nameAndUrl = sha1Hex("${e.idName ?: e.name}|${e.url}")
         if (e.tvgId.isNullOrBlank()) return "u:$nameAndUrl".takeIf { taken.add(it) }
         // Registered for the first entry too, so that an exact repeat of it is recognised.
         val variant = "id:${e.tvgId}|$nameAndUrl"
