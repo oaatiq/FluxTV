@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import java.util.Locale
 
 /**
  * Owns a single, reused ExoPlayer and implements the spec's reliability philosophy:
@@ -55,6 +56,7 @@ class FluxPlayerController(
     private var currentChannel: Channel? = null
     private var maxVideoHeight = 0
     private var defaultUserAgent = DEFAULT_USER_AGENT
+    private var evenVolume = true
 
     /**
      * Whether FluxTV is on screen to be watched: set by tuning and [onResume], cleared by [onPause]
@@ -126,6 +128,12 @@ class FluxPlayerController(
     /** The player name (User-Agent) for channels whose playlist entry names none (Preferences). */
     fun setUserAgent(value: String) {
         defaultUserAgent = value
+    }
+
+    /** Preferences → Even out the volume between channels. Takes effect at once, on the channel playing. */
+    fun setEvenVolume(value: Boolean) {
+        evenVolume = value
+        bundle?.evenVolume?.leveler?.enabled = value
     }
 
     fun setMaxVideoHeight(height: Int) {
@@ -268,6 +276,7 @@ class FluxPlayerController(
     private fun ensurePlayer() {
         if (bundle != null) return
         val created = PlayerFactory.create(context, maxVideoHeight, httpClient)
+        created.evenVolume.leveler.enabled = evenVolume
         created.player.addListener(playerListener)
         created.player.addAnalyticsListener(analyticsListener)
         bundle = created
@@ -581,8 +590,19 @@ class FluxPlayerController(
             bufferingEvents = bufferingEvents,
             recoveryCount = recoveryCount,
             droppedFrames = droppedFramesTotal,
+            volumeLevelling = levellingLabel(),
             playbackState = stateName(p.playbackState)
         )
+    }
+
+    private fun levellingLabel(): String {
+        val processor = bundle?.evenVolume ?: return "—"
+        return when {
+            !evenVolume -> "Off"
+            // Sound passed through undecoded, to the TV set or an amplifier, cannot be levelled.
+            !processor.isActive -> "Not possible for this sound"
+            else -> String.format(Locale.US, "%+.1f dB", processor.leveler.gainDb)
+        }
     }
 
     private fun stateName(state: Int): String = when (state) {

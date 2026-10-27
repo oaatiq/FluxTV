@@ -49,6 +49,7 @@ import com.fluxtv.app.ui.components.ChannelRow
 import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxMuted
+import com.fluxtv.app.ui.theme.LocalTextScale
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -91,7 +92,8 @@ private const val PREVIEW_DELAY_MS = 140L
  * does not interrupt viewing (REQ-CH-003). It opens on the watched channel's category with the focus on
  * that channel. ◀ (or Back) moves to the categories; moving through them previews each category's
  * channels once the focus rests there, and OK or ▶ goes into the channels. Favorites and All channels are
- * the first two categories.
+ * the first two categories. The time is at the top right. With larger text (Preferences → Text size)
+ * the panel and its columns grow with it, so names keep as much of their length as they can.
  */
 @Composable
 fun ChannelListOverlay(
@@ -159,11 +161,15 @@ fun ChannelListOverlay(
         onPaneChange(BrowsePane.CHANNELS)
     }
 
+    val textScale = LocalTextScale.current
+    val panelWidth = 700.dp + 320.dp * (textScale - 1f)
+    val categoryWidth = 200.dp * (1f + 0.6f * (textScale - 1f))
+
     Row(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(700.dp)
+                .width(panelWidth)
                 .background(Color(0xF2080C14))
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown) {
@@ -184,18 +190,26 @@ fun ChannelListOverlay(
                 }
                 .overscan()
         ) {
+            // The clock is measured first, so a long category name cannot push it off the panel.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                SectionTitle(entries.firstOrNull { it.key == shownKey }?.name ?: "Channels")
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+                    SectionTitle(
+                        entries.firstOrNull { it.key == shownKey }?.name ?: "Channels",
+                        Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    BasicText(
+                        "${channels.size} channels",
+                        modifier = Modifier.padding(bottom = 4.dp),
+                        style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+                    )
+                }
                 Spacer(Modifier.width(16.dp))
-                BasicText(
-                    "${channels.size} channels",
-                    modifier = Modifier.padding(bottom = 4.dp),
-                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-                )
+                ClockText()
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                LazyColumn(state = categoryState, modifier = Modifier.width(200.dp).fillMaxHeight()) {
+                LazyColumn(state = categoryState, modifier = Modifier.width(categoryWidth).fillMaxHeight()) {
                     itemsIndexed(entries, key = { _, entry -> entry.key }) { _, entry ->
                         CategoryRow(
                             name = entry.name,
@@ -227,7 +241,7 @@ fun ChannelListOverlay(
                                 modifier = if (channel.stableId == focusChannelId) Modifier.focusRequester(channelFocus) else Modifier,
                                 onClick = { onSelect(channel) },
                                 onLongClick = { onToggleFavorite(channel) },
-                                numberWidth = 58.dp
+                                numberWidth = 58.dp * textScale
                             )
                         }
                     }

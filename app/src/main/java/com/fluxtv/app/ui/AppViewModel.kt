@@ -8,6 +8,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.fluxtv.app.AppContainer
 import com.fluxtv.app.FluxTvApplication
+import com.fluxtv.app.data.guide.Guide
+import com.fluxtv.app.data.guide.GuideOutcome
+import com.fluxtv.app.data.guide.GuideRepository
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.model.DiagnosticsEvent
 import com.fluxtv.app.data.repository.RefreshOutcome
@@ -32,6 +35,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -67,6 +73,9 @@ private fun groupsOf(sorted: List<Channel>): Map<String, List<Channel>> =
  */
 private fun lineupOf(channels: List<Channel>, favorites: Set<String>, favoritesOnly: Boolean): List<Channel> =
     if (!favoritesOnly) channels else channels.filter { it.stableId in favorites }.ifEmpty { channels }
+
+/** The programme guides to load ([sources]: none, for no guide) and the playlist they are for. */
+private data class GuideRequest(val sources: List<String>, val playlistId: String?)
 
 /**
  * The phone setup session, while Settings shows its QR code. [address] is what the code holds: null
@@ -140,7 +149,19 @@ class AppViewModel(
 
     val controller: FluxPlayerController get() = container.playerController
 
+    /**
+     * The programme guide, for the banner's Now / Next. Like the diagnostics, it is not copied into
+     * [UiState]: the banner and Settings collect it themselves.
+     */
+    val guide: StateFlow<Guide> get() = container.guideRepository.guide
+    val guideLoading: StateFlow<Boolean> get() = container.guideRepository.loading
+    val guideProblem: StateFlow<String?> get() = container.guideRepository.problem
+
+    /** The programme guides the playlist in use names, for Settings to say whether it names any. */
+    val playlistGuideUrls: StateFlow<List<String>> get() = container.channelRepository.guideUrls
+
     private var bannerJob: Job? = null
+    private var guideJob: Job? = null
     private var firstLoadJob: Job? = null
     private var lastChannelJob: Job? = null
     private var numberJob: Job? = null
@@ -180,6 +201,7 @@ class AppViewModel(
                 _state.update { it.copy(settings = s, favorites = s.favorites, favoritesOnly = s.favoritesOnly) }
                 container.playerController.setMaxVideoHeight(s.maxVideoHeight)
                 container.playerController.setUserAgent(s.effectiveUserAgent)
+                container.playerController.setEvenVolume(s.evenVolume)
             }
         }
         viewModelScope.launch {
@@ -207,6 +229,9 @@ class AppViewModel(
                 )
             }
             withContext(Dispatchers.IO) { container.channelRepository.loadFromCache(s.activePlaylistId) }
+            // The saved guide is read alongside: the banner of the first channel can do without it.
+            launch { container.guideRepository.loadFromCache(s.activePlaylistId) }
+            keepGuideCurrent()
 
             val playlist = s.activePlaylist?.takeIf { s.isConfigured }
             if (playlist == null) {
@@ -331,6 +356,59 @@ class AppViewModel(
         container.channelRepository.refresh(playlist, settings.effectiveUserAgent)
     }
 
+    // ---------- programme guide ----------
+
+    /**
+     * Keeps the programme guide of the playlist in use loaded: the one Settings sets for it, else the
+     * ones the playlist names. It starts once the first channel plays (or has had a minute to), so a
+     * large guide does not hold up the picture, loads the guide when it is missing, made for another
+     * playlist or link, or half a day old, and looks again every hour. A guide that would not load is
+     * tried again then too.
+     */
+    private fun keepGuideCurrent() {
+        if (guideJob != null) return
+        guideJob = viewModelScope.launch {
+            withTimeoutOrNull(FIRST_PLAY_WAIT_MS) {
+                container.playerController.status.first { it.phase == PlaybackPhase.PLAYING }
+            }
+            delay(GUIDE_START_DELAY_MS)
+            val repository = container.channelRepository
+            combine(repository.guideUrls, repository.channels, container.settingsRepository.settings) { fromPlaylist, _, s ->
+                // The playlist the channels are from, which during a switch can be ahead of Settings.
+                val id = repository.playlistId
+                val set = s.playlists.firstOrNull { it.id == id }?.guideUrl.orEmpty()
+                GuideRequest(if (set.isNotBlank()) listOf(set) else fromPlaylist, id)
+            }
+                .distinctUntilChanged()
+                .collectLatest { request ->
+                    while (true) {
+                        updateGuide(request)
+                        delay(GUIDE_CHECK_MS)
+                    }
+                }
+        }
+    }
+
+    private suspend fun updateGuide(request: GuideRequest) {
+        val guides = container.guideRepository
+        if (request.sources.isEmpty()) {
+            if (guides.guide.value.updatedAtMs != 0L) guides.clear()
+            return
+        }
+        if (guides.isCurrent(request.sources, request.playlistId, GuideRepository.MAX_AGE_MS)) return
+        val channels = container.channelRepository.channels.value
+        if (channels.isEmpty()) return
+        val outcome = guides.refresh(request.sources, request.playlistId, channels, _state.value.settings.effectiveUserAgent)
+        // Links are not logged: a guide's link can carry the provider's user name and password.
+        val message = when (outcome) {
+            is GuideOutcome.Loaded ->
+                "Programme guide loaded: ${outcome.channelCount} channels" +
+                    if (outcome.brokenOff) " (the guide broke off part-way)" else ""
+            is GuideOutcome.Failed -> "Could not load the programme guide: ${outcome.reason}"
+        }
+        container.diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), null, "guide", message))
+    }
+
     // ---------- tuning ----------
 
     fun tuneTo(channel: Channel) {
@@ -342,16 +420,41 @@ class AppViewModel(
                 currentChannel = channel,
                 overlay = EasyOverlay.NONE,
                 numberEntry = "",
-                showInfoBanner = true,
                 transientMessage = null
             )
         }
         container.playerController.playChannel(channel)
         saveLastChannel(LAST_CHANNEL_SAVE_DELAY_MS)
+        showBanner(channel)
+    }
+
+    /**
+     * The channel banner, for a while: longer when it has the guide's Now / Next to read, which takes
+     * longer than a channel's name.
+     */
+    private fun showBanner(channel: Channel) {
+        val hasGuide = container.guideRepository.guide.value.nowAndNext(channel, System.currentTimeMillis()) != null
+        _state.update { it.copy(showInfoBanner = true) }
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {
-            delay(4500)
+            delay(if (hasGuide) BANNER_WITH_GUIDE_MS else BANNER_MS)
             _state.update { it.copy(showInfoBanner = false) }
+        }
+    }
+
+    /**
+     * The remote's Info or Guide key: the banner of the channel on screen, with what is on now and
+     * next; pressed again while it shows, it goes.
+     */
+    fun toggleChannelInfo() {
+        val st = _state.value
+        val channel = st.currentChannel ?: return
+        if (st.overlay != EasyOverlay.NONE) return
+        if (st.showInfoBanner) {
+            bannerJob?.cancel()
+            _state.update { it.copy(showInfoBanner = false) }
+        } else {
+            showBanner(channel)
         }
     }
 
@@ -381,6 +484,8 @@ class AppViewModel(
         if (channel.stableId == currentChannelId && showing) {
             closeOverlay()
             container.playerController.onResume()
+            // Choosing the channel already on screen is a way to see what is on it.
+            showBanner(channel)
         } else {
             tuneTo(channel)
         }
@@ -772,6 +877,19 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setUserAgent(value) }
     }
 
+    fun setTextSize(percent: Int) {
+        viewModelScope.launch { container.settingsRepository.setTextSize(percent) }
+    }
+
+    fun setEvenVolume(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setEvenVolume(value) }
+    }
+
+    /** A programme guide link for a saved playlist; blank goes back to the ones the playlist names. */
+    fun setGuideUrl(id: String, url: String) {
+        viewModelScope.launch { container.settingsRepository.setGuideUrl(id, url) }
+    }
+
     fun refreshDiagnostics() = container.playerController.refreshDiagnostics()
 
     fun clearDiagnostics() = container.playerController.clearDiagnostics()
@@ -908,6 +1026,7 @@ class AppViewModel(
         super.onCleared()
         stopPhoneSetup()
         bannerJob?.cancel()
+        guideJob?.cancel()
         numberJob?.cancel()
         transientJob?.cancel()
         container.networkMonitor.stop()
@@ -930,6 +1049,14 @@ class AppViewModel(
         private const val STARTUP_REFRESH_DELAY_MS = 30_000L
 
         private const val HOUR_MS = 3_600_000L
+
+        /** How long the channel banner shows after a channel change, and with the guide's Now / Next. */
+        private const val BANNER_MS = 4_500L
+        private const val BANNER_WITH_GUIDE_MS = 7_000L
+
+        /** The guide is first looked at this long after the first channel plays, then every hour. */
+        private const val GUIDE_START_DELAY_MS = 20_000L
+        private const val GUIDE_CHECK_MS = HOUR_MS
 
         /** How long a channel has to stay on before it is remembered for the next start. */
         private const val LAST_CHANNEL_SAVE_DELAY_MS = 3_000L

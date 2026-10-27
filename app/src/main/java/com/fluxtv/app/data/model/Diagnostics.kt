@@ -21,6 +21,8 @@ data class DiagnosticsSnapshot(
     val bufferingEvents: Int = 0,
     val recoveryCount: Int = 0,
     val startupTimeMs: Long = 0L,
+    /** What Preferences → Even out the volume is doing to the channel playing: "Off", or its gain. */
+    val volumeLevelling: String = "—",
     val playbackState: String = "IDLE"
 )
 

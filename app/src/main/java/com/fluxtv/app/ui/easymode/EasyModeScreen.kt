@@ -37,6 +37,7 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 @Composable
 fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     val playerReady by vm.controller.playerReady.collectAsStateWithLifecycle()
+    val guide by vm.guide.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         PlayerSurface(
@@ -55,7 +56,8 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         val showRecovery = state.playback.showRecoveryPrompt && state.overlay == EasyOverlay.NONE
 
         if (state.showInfoBanner && channel != null && state.overlay == EasyOverlay.NONE && !showRecovery) {
-            ChannelInfoBanner(channel.number, channel.name, channel.logoUrl, channel.group)
+            ChannelInfoBanner(channel, guide)
+            ClockOverlay()
         }
 
         if (state.overlay == EasyOverlay.NONE && !showRecovery && state.playback.userMessage != null) {

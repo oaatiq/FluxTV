@@ -3,6 +3,7 @@ package com.fluxtv.app
 import android.content.Context
 import com.fluxtv.app.data.cache.DiagnosticsStore
 import com.fluxtv.app.data.cache.PlaylistCache
+import com.fluxtv.app.data.guide.GuideRepository
 import com.fluxtv.app.data.remote.PlaylistFetcher
 import com.fluxtv.app.data.remote.newHttpClient
 import com.fluxtv.app.data.repository.ChannelRepository
@@ -31,6 +32,7 @@ class AppContainer(context: Context) {
 
     private val playlistFetcher = PlaylistFetcher(appContext) { httpClient }
     val channelRepository = ChannelRepository(playlistCache, playlistFetcher)
+    val guideRepository = GuideRepository(appContext) { httpClient }
     val networkMonitor = NetworkMonitor(appContext)
     val playerController = FluxPlayerController(appContext, diagnosticsStore, networkMonitor) { httpClient }
 }

@@ -225,6 +225,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Remotes that have one: the channel banner, with what is on now and next.
+            KeyEvent.KEYCODE_INFO,
+            KeyEvent.KEYCODE_GUIDE -> {
+                if (firstDown) viewModel.toggleChannelInfo()
+                return true
+            }
+
             KeyEvent.KEYCODE_MENU,
             KeyEvent.KEYCODE_SETTINGS,
             KeyEvent.KEYCODE_TV_CONTENTS_MENU -> {

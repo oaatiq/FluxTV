@@ -33,8 +33,12 @@ sealed class RefreshOutcome {
     ) : RefreshOutcome()
 }
 
-/** A fetched playlist: its channels, or why there are none. */
-private class Fetched(val channels: List<Channel>?, val failure: RefreshOutcome.Failed?)
+/** A fetched playlist: its channels and the programme guides it names, or why there are none. */
+private class Fetched(
+    val channels: List<Channel>?,
+    val failure: RefreshOutcome.Failed?,
+    val guideUrls: List<String> = emptyList()
+)
 
 /** How many old channels of one name a channel at a new address is compared with, at most. */
 private const val MAX_SAME_NAME_LOOKED_AT = 500
@@ -56,6 +60,10 @@ class ChannelRepository(
 
     private val _lastUpdatedMs = MutableStateFlow(0L)
     val lastUpdatedMs: StateFlow<Long> = _lastUpdatedMs.asStateFlow()
+
+    /** The programme guides (XMLTV) the playlist of [channels] names in its first line. */
+    private val _guideUrls = MutableStateFlow<List<String>>(emptyList())
+    val guideUrls: StateFlow<List<String>> = _guideUrls.asStateFlow()
 
     /** The saved playlist [channels] are from, which favorites and the last channel are kept for. */
     @Volatile
@@ -81,12 +89,14 @@ class ChannelRepository(
         playlistId = activeId
         _channels.value = sharingRepeats(cached.channels)
         _lastUpdatedMs.value = cached.updatedAtMs
+        _guideUrls.value = cached.guideUrls
     }
 
     /**
      * The cache is read back with a copy of every value on every channel, while the parser has
-     * channels share one copy of a repeated group title, logo, user agent or referer. Shared here too,
-     * the list FluxTV starts from, and keeps until the next refresh, is as small as a refreshed one.
+     * channels share one copy of a repeated group title, logo, tvg-id, user agent or referer. Shared
+     * here too, the list FluxTV starts from, and keeps until the next refresh, is as small as a
+     * refreshed one.
      */
     private fun sharingRepeats(channels: List<Channel>): List<Channel> {
         val seen = HashMap<String, String>()
@@ -96,7 +106,8 @@ class ChannelRepository(
                 logoUrl = shared(it.logoUrl),
                 group = shared(it.group),
                 userAgent = shared(it.userAgent),
-                referer = shared(it.referer)
+                referer = shared(it.referer),
+                tvgId = shared(it.tvgId)
             )
         }
     }
@@ -151,9 +162,10 @@ class ChannelRepository(
             val merged = fetched.channels ?: return@withContext fetched.failure!!
             playlistId = playlist.id
             _channels.value = merged
+            _guideUrls.value = fetched.guideUrls
             val now = System.currentTimeMillis()
             _lastUpdatedMs.value = now
-            cache.save(CachedPlaylist(merged, now, playlist.name, playlist.id))
+            cache.save(CachedPlaylist(merged, now, playlist.name, playlist.id, fetched.guideUrls))
             RefreshOutcome.Success(merged.size)
         }
 
@@ -175,7 +187,7 @@ class ChannelRepository(
                     if (result.entries.isEmpty()) {
                         Fetched(null, RefreshOutcome.Failed("no channels parsed", keptExisting, noChannels = true))
                     } else {
-                        Fetched(merge(old, result.entries, renumberIfMostlyNew), null)
+                        Fetched(merge(old, result.entries, renumberIfMostlyNew), null, result.guideUrls)
                     }
             }
         } catch (_: OutOfMemoryError) {
@@ -244,7 +256,8 @@ class ChannelRepository(
                     logoUrl = e.logo,
                     group = e.group,
                     userAgent = e.userAgent,
-                    referer = e.referer
+                    referer = e.referer,
+                    tvgId = e.tvgId
                 )
             )
         }

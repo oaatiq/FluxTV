@@ -4,13 +4,15 @@ import android.content.Context
 import android.net.Uri
 import com.fluxtv.app.data.m3u.M3uEntry
 import com.fluxtv.app.data.m3u.M3uParser
+import com.fluxtv.app.data.m3u.M3uPlaylist
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 sealed class FetchResult {
-    data class Success(val entries: List<M3uEntry>) : FetchResult()
+    /** [guideUrls]: the programme guides the playlist names (see [M3uPlaylist]). */
+    data class Success(val entries: List<M3uEntry>, val guideUrls: List<String>) : FetchResult()
     /** [httpCode]: the provider's server answered, with this error. */
     data class Failure(val reason: String, val httpCode: Int? = null) : FetchResult()
 }
@@ -40,12 +42,12 @@ class PlaylistFetcher(
                 source.startsWith("content:") -> {
                     val stream = context.contentResolver.openInputStream(Uri.parse(source))
                         ?: return FetchResult.Failure("empty content")
-                    FetchResult.Success(stream.bufferedReader().use { M3uParser.parse(it) })
+                    success(stream.bufferedReader().use { M3uParser.parse(it) })
                 }
 
                 type == "file" || source.startsWith("/") || source.startsWith("file:") -> {
                     val path = source.removePrefix("file://")
-                    FetchResult.Success(File(path).bufferedReader().use { M3uParser.parse(it) })
+                    success(File(path).bufferedReader().use { M3uParser.parse(it) })
                 }
 
                 else -> {
@@ -57,7 +59,7 @@ class PlaylistFetcher(
                         if (!resp.isSuccessful) return FetchResult.Failure("HTTP ${resp.code}", resp.code)
                         val body = resp.body ?: return FetchResult.Failure("empty response")
                         // charStream() decodes with the response's charset and drops a BOM, as string() did.
-                        FetchResult.Success(body.charStream().buffered().use { M3uParser.parse(it) })
+                        success(body.charStream().buffered().use { M3uParser.parse(it) })
                     }
                 }
             }
@@ -65,4 +67,6 @@ class PlaylistFetcher(
             FetchResult.Failure(e.message ?: e.javaClass.simpleName)
         }
     }
+
+    private fun success(playlist: M3uPlaylist) = FetchResult.Success(playlist.entries, playlist.guideUrls)
 }

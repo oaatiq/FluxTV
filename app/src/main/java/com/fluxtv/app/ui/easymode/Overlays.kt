@@ -1,5 +1,6 @@
 package com.fluxtv.app.ui.easymode
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,10 +15,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -25,17 +30,91 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.fluxtv.app.data.guide.Guide
+import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
 import com.fluxtv.app.ui.theme.FluxSurface
+import com.fluxtv.app.ui.theme.LocalTextScale
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val Scrim = Color(0xCC0A0F18)
 
-/** Bottom channel banner shown briefly on tune-in (REQ-SEN-014: number, logo, name). */
+private const val MINUTE_MS = 60_000L
+
+/** The time now, moved on as each minute starts: for the clock and the banner's Now / Next. */
 @Composable
-fun ChannelInfoBanner(number: Int, name: String, logoUrl: String?, group: String?) {
+fun rememberMinuteClock(): Long {
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(MINUTE_MS - value % MINUTE_MS)
+        }
+    }
+    return now
+}
+
+/** The time in the TV's own format: 24-hour or 12-hour, as its settings say. */
+@Composable
+private fun rememberTimeFormat(): java.text.DateFormat {
+    val context = LocalContext.current
+    return remember(context) { DateFormat.getTimeFormat(context) }
+}
+
+/** The large clock shown with the channel banner, top right: the time, and the day and date under it. */
+@Composable
+fun ClockOverlay() {
+    val now = rememberMinuteClock()
+    val timeFormat = rememberTimeFormat()
+    val dateFormat = remember {
+        val locale = Locale.getDefault()
+        SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), locale)
+    }
+    Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.TopEnd) {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(Scrim)
+                .padding(horizontal = 28.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            BasicText(
+                timeFormat.format(Date(now)),
+                style = TextStyle(color = FluxOnSurface, fontSize = 60.sp, fontWeight = FontWeight.Bold)
+            )
+            BasicText(dateFormat.format(Date(now)), style = TextStyle(color = FluxMuted, fontSize = 22.sp))
+        }
+    }
+}
+
+/** The time alone, as large as a title, for the top of the channel list. */
+@Composable
+fun ClockText(modifier: Modifier = Modifier) {
+    val now = rememberMinuteClock()
+    val timeFormat = rememberTimeFormat()
+    BasicText(
+        timeFormat.format(Date(now)),
+        modifier = modifier,
+        style = TextStyle(color = FluxOnSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+    )
+}
+
+/**
+ * Bottom channel banner shown briefly on tune-in (REQ-SEN-014: number, logo, name), with what is on
+ * now and next when the programme guide has it.
+ */
+@Composable
+fun ChannelInfoBanner(channel: Channel, guide: Guide) {
+    val now = rememberMinuteClock()
+    val nowNext = remember(guide, channel, now) { guide.nowAndNext(channel, now) }
+    val timeFormat = rememberTimeFormat()
+    val logoUrl = channel.logoUrl
+    val group = channel.group
     Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.BottomStart) {
         Row(
             modifier = Modifier
@@ -45,7 +124,7 @@ fun ChannelInfoBanner(number: Int, name: String, logoUrl: String?, group: String
             verticalAlignment = Alignment.CenterVertically
         ) {
             BasicText(
-                number.toString(),
+                channel.number.toString(),
                 style = TextStyle(color = FluxAccent, fontSize = 48.sp, fontWeight = FontWeight.Bold)
             )
             Spacer(Modifier.width(20.dp))
@@ -55,7 +134,7 @@ fun ChannelInfoBanner(number: Int, name: String, logoUrl: String?, group: String
             }
             Column {
                 BasicText(
-                    name,
+                    channel.name,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = TextStyle(color = FluxOnSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold)
@@ -63,8 +142,42 @@ fun ChannelInfoBanner(number: Int, name: String, logoUrl: String?, group: String
                 if (!group.isNullOrBlank()) {
                     BasicText(group, style = TextStyle(color = FluxMuted, fontSize = 18.sp))
                 }
+                if (nowNext != null) {
+                    Spacer(Modifier.height(10.dp))
+                    nowNext.now?.let {
+                        ProgrammeLine("Now", it.title, "until ${timeFormat.format(Date(it.endMs))}", current = true)
+                    }
+                    nowNext.next?.let {
+                        ProgrammeLine("Next", it.title, "at ${timeFormat.format(Date(it.startMs))}", current = false)
+                    }
+                }
             }
         }
+    }
+}
+
+/** "Now  News at Eight  until 20:30": the titles line up under each other, the time follows. */
+@Composable
+private fun ProgrammeLine(label: String, title: String, time: String, current: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText(
+            label,
+            modifier = Modifier.width(72.dp * LocalTextScale.current),
+            style = TextStyle(color = if (current) FluxAccent else FluxMuted, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        )
+        BasicText(
+            title,
+            modifier = Modifier.weight(1f, fill = false),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(
+                color = FluxOnSurface,
+                fontSize = 24.sp,
+                fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal
+            )
+        )
+        Spacer(Modifier.width(16.dp))
+        BasicText(time, maxLines = 1, style = TextStyle(color = FluxMuted, fontSize = 20.sp))
     }
 }
 

@@ -14,14 +14,15 @@ import java.io.FileOutputStream
 /**
  * [playlistId]: the saved playlist these channels are from. A cache written before there were several
  * playlists has none, and belongs to the playlist that was in use then, which is the one in use after
- * the update.
+ * the update. [guideUrls]: the programme guides the playlist names.
  */
 @Serializable
 data class CachedPlaylist(
     val channels: List<Channel>,
     val updatedAtMs: Long,
     val sourceName: String? = null,
-    val playlistId: String? = null
+    val playlistId: String? = null,
+    val guideUrls: List<String> = emptyList()
 )
 
 /**

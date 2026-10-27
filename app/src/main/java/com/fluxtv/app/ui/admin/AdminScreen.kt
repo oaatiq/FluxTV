@@ -48,6 +48,10 @@ import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
 import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
+import com.fluxtv.app.data.settings.SavedPlaylist
+import com.fluxtv.app.data.settings.TEXT_SIZE_EXTRA_LARGE
+import com.fluxtv.app.data.settings.TEXT_SIZE_LARGE
+import com.fluxtv.app.data.settings.TEXT_SIZE_NORMAL
 import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.setup.AddStatus
 import com.fluxtv.app.ui.AppViewModel
@@ -241,9 +245,12 @@ private fun PlaylistsSection(
     }
 }
 
-private enum class PlaylistEdit { NAME, LINK }
+private enum class PlaylistEdit { NAME, LINK, GUIDE }
 
-/** One saved playlist: put it in use, rename it, give it a new link, or delete it. */
+/**
+ * One saved playlist: put it in use, rename it, give it a new link or its own programme guide, or
+ * delete it.
+ */
 @Composable
 private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone: () -> Unit) {
     val playlist = state.settings.playlists.firstOrNull { it.id == id }
@@ -257,11 +264,13 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
     var lastEdit by remember { mutableStateOf<PlaylistEdit?>(null) }
     var nameDraft by remember { mutableStateOf(playlist.name) }
     var linkDraft by remember { mutableStateOf(playlist.url) }
+    var guideDraft by remember { mutableStateOf(playlist.guideUrl) }
     var isFile by remember { mutableStateOf(playlist.type == "file") }
     var confirmDelete by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     val renameButton = remember { FocusRequester() }
     val linkButton = remember { FocusRequester() }
+    val guideButton = remember { FocusRequester() }
     val field = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         vm.clearPlaylistMessages()
@@ -274,7 +283,13 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
             lastEdit = edit
             runCatching { field.requestFocus() }
         } else {
-            lastEdit?.let { runCatching { (if (it == PlaylistEdit.NAME) renameButton else linkButton).requestFocus() } }
+            val button = when (lastEdit) {
+                PlaylistEdit.NAME -> renameButton
+                PlaylistEdit.LINK -> linkButton
+                PlaylistEdit.GUIDE -> guideButton
+                null -> null
+            }
+            button?.let { runCatching { it.requestFocus() } }
         }
     }
 
@@ -295,6 +310,7 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
             overflow = TextOverflow.Ellipsis,
             style = TextStyle(color = FluxMuted, fontSize = 16.sp)
         )
+        GuideStatus(vm, playlist, inUse)
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // One button whose job follows the playlist, so the focus stays on it once it is in use.
             FluxButton(if (inUse) "Refresh now" else "Use this playlist", focusRequester = first) {
@@ -305,6 +321,10 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
                 linkDraft = playlist.url
                 isFile = playlist.type == "file"
                 editing = PlaylistEdit.LINK
+            }
+            FluxButton("Programme guide", focusRequester = guideButton) {
+                guideDraft = playlist.guideUrl
+                editing = PlaylistEdit.GUIDE
             }
         }
         when (editing) {
@@ -339,6 +359,26 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
                     FluxButton("Cancel") { editing = null }
                 }
             }
+            PlaylistEdit.GUIDE -> {
+                BasicText(
+                    "TV uses the programme guide the playlist names, unless a link is set here. " +
+                        "Leave it empty to go back to the playlist's own.",
+                    style = TextStyle(color = FluxMuted, fontSize = 16.sp)
+                )
+                FluxTextField(
+                    label = "Programme guide link (XMLTV, may end in .gz)",
+                    value = guideDraft,
+                    onValueChange = { guideDraft = it },
+                    modifier = Modifier.fillMaxWidth(0.9f),
+                    focusRequester = field,
+                    keyboardType = KeyboardType.Uri
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FluxButton("Save guide link") { vm.setGuideUrl(id, guideDraft); editing = null }
+                    FluxButton("Use the playlist's own") { vm.setGuideUrl(id, ""); editing = null }
+                    FluxButton("Cancel") { editing = null }
+                }
+            }
             null -> Unit
         }
         if (inUse) {
@@ -358,6 +398,33 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
         }
         PlaylistMessages(state)
     }
+}
+
+/**
+ * Where [playlist]'s programme guide comes from and, for the playlist in use (the only one whose guide
+ * is loaded), how loading it went.
+ */
+@Composable
+private fun GuideStatus(vm: AppViewModel, playlist: SavedPlaylist, inUse: Boolean) {
+    val guide by vm.guide.collectAsStateWithLifecycle()
+    val loading by vm.guideLoading.collectAsStateWithLifecycle()
+    val problem by vm.guideProblem.collectAsStateWithLifecycle()
+    val named by vm.playlistGuideUrls.collectAsStateWithLifecycle()
+    val own = playlist.guideUrl.isNotBlank()
+    val text = when {
+        !inUse && own -> "Programme guide: the link set here."
+        !inUse -> "Programme guide: the one the playlist names, if it names one."
+        loading -> "Loading the programme guide…"
+        problem != null -> problem.orEmpty()
+        guide.updatedAtMs > 0 && guide.playlistId == playlist.id && guide.channelCount == 0 ->
+            "The programme guide has none of this playlist's channels."
+        guide.updatedAtMs > 0 && guide.playlistId == playlist.id ->
+            "Programme guide: Now and Next for ${guide.channelCount} channels, updated ${formatTime(guide.updatedAtMs)}" +
+                if (own) " (the link set here)." else "."
+        !own && named.isEmpty() -> "This playlist names no programme guide. Set one with Programme guide."
+        else -> "The programme guide loads shortly after TV starts playing."
+    }
+    BasicText(text, style = TextStyle(color = FluxOnSurface, fontSize = 18.sp))
 }
 
 /** A playlist link or file typed with the remote (or a keyboard), for when there is no phone at hand. */
@@ -582,6 +649,30 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             focusRequester = first
         ) { vm.setFavoritesOnly(it) }
 
+        BasicText("Text size on TV", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FluxChip("Normal", state.settings.textSizePercent == TEXT_SIZE_NORMAL) { vm.setTextSize(TEXT_SIZE_NORMAL) }
+            FluxChip("Large", state.settings.textSizePercent == TEXT_SIZE_LARGE) { vm.setTextSize(TEXT_SIZE_LARGE) }
+            FluxChip("Extra large", state.settings.textSizePercent == TEXT_SIZE_EXTRA_LARGE) {
+                vm.setTextSize(TEXT_SIZE_EXTRA_LARGE)
+            }
+        }
+        // A channel row as TV shows it at the size chosen; Settings itself keeps its size.
+        BasicText(
+            "12   Channel name, as the channel list shows it",
+            style = TextStyle(color = FluxOnSurface, fontSize = 22.sp * (state.settings.textSizePercent / 100f))
+        )
+
+        FluxToggleRow(
+            "Even out the volume between channels",
+            state.settings.evenVolume,
+            Modifier.fillMaxWidth(0.7f)
+        ) { vm.setEvenVolume(it) }
+        BasicText(
+            "Quiet channels are brought up and loud ones down, so changing channel does not need the volume button.",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
+
         BasicText("Maximum quality", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FluxChip("Auto", state.settings.maxVideoHeight == 0) { vm.setMaxVideoHeight(0) }
@@ -725,6 +816,7 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
             InfoRow("Buffering events", d.bufferingEvents.toString())
             InfoRow("Recoveries", d.recoveryCount.toString())
             InfoRow("Channel startup time", if (d.startupTimeMs > 0) "${d.startupTimeMs} ms" else "—")
+            InfoRow("Volume levelling", d.volumeLevelling)
             InfoRow("Playback state", d.playbackState)
         }
 

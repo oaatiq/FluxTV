@@ -1,7 +1,11 @@
 package com.fluxtv.app.ui.theme
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
@@ -28,4 +32,24 @@ fun FluxTheme(content: @Composable () -> Unit) {
         onSurfaceVariant = FluxMuted
     )
     MaterialTheme(colorScheme = colors, content = content)
+}
+
+/**
+ * How many times the normal size TV's text is (Preferences → Text size): 1, 1.25 or 1.5. Text
+ * follows it by itself; layouts read it for the widths that have to grow with the text.
+ */
+val LocalTextScale = staticCompositionLocalOf { 1f }
+
+/**
+ * [content] with all its text [scale] times its normal size, for Viewers who see poorly. Everything
+ * in sp grows, on top of the TV's own font size setting; sizes in dp stay as they are.
+ */
+@Composable
+fun ScaledText(scale: Float, content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, density.fontScale * scale),
+        LocalTextScale provides scale,
+        content = content
+    )
 }

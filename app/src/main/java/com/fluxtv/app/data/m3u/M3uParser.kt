@@ -21,6 +21,13 @@ data class M3uEntry(
 )
 
 /**
+ * A parsed playlist: its entries, and the programme guides (XMLTV) its #EXTM3U line names, in the
+ * playlist's own order. Players read the guide's address from "url-tvg", "x-tvg-url" or "tvg-url",
+ * and one attribute can hold several addresses separated by commas.
+ */
+class M3uPlaylist(val entries: List<M3uEntry>, val guideUrls: List<String>)
+
+/**
  * Tolerant M3U / M3U8 parser.
  *
  * It never throws on bad input: malformed or unparseable entries are skipped so a single bad line
@@ -28,14 +35,16 @@ data class M3uEntry(
  */
 object M3uParser {
     private val ATTR = Regex("([A-Za-z0-9_-]+)=\"(.*?)\"")
+    private val GUIDE_ATTRIBUTES = setOf("url-tvg", "x-tvg-url", "tvg-url")
 
     /**
      * Reads the playlist one line at a time, straight from the download or file. A provider's list
      * can run to tens of megabytes, and holding it as one string, plus the copies that splitting it
      * into lines makes, could run a TV box out of memory. Lines end at \n, \r or \r\n, as before.
      */
-    fun parse(reader: BufferedReader): List<M3uEntry> {
+    fun parse(reader: BufferedReader): M3uPlaylist {
         val out = ArrayList<M3uEntry>()
+        val guideUrls = ArrayList<String>()
 
         var name: String? = null
         var idName: String? = null
@@ -67,7 +76,15 @@ object M3uParser {
             if (line.isEmpty()) continue
             try {
                 when {
-                    line.startsWith("#EXTM3U", ignoreCase = true) -> { /* header */ }
+                    line.startsWith("#EXTM3U", ignoreCase = true) -> {
+                        for (m in ATTR.findAll(line)) {
+                            if (m.groupValues[1].lowercase() !in GUIDE_ATTRIBUTES) continue
+                            for (url in m.groupValues[2].split(',')) {
+                                val clean = url.trim()
+                                if (clean.isNotEmpty() && clean !in guideUrls) guideUrls.add(clean)
+                            }
+                        }
+                    }
 
                     line.startsWith("#EXTINF", ignoreCase = true) -> {
                         val attrs = HashMap<String, String>()
@@ -118,7 +135,7 @@ object M3uParser {
                 reset()
             }
         }
-        return out
+        return M3uPlaylist(out, guideUrls)
     }
 
     /**

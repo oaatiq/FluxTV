@@ -13,6 +13,8 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
@@ -33,7 +35,8 @@ import okhttp3.OkHttpClient
  * (REQ-START-004).
  * Adaptive track selection is on by default and can be capped by the administrator (REQ-ADP).
  * Decoder fallback is enabled so one unsupported track doesn't kill playback (REQ-PLAY-003,
- * REQ-REL-004).
+ * REQ-REL-004). The sound goes through [EvenVolumeAudioProcessor], which evens out the volume between
+ * channels when Preferences has it on.
  */
 object PlayerFactory {
 
@@ -45,7 +48,8 @@ object PlayerFactory {
         val httpDataSourceFactory: OkHttpDataSource.Factory,
         val trackSelector: DefaultTrackSelector,
         val bandwidthMeter: DefaultBandwidthMeter,
-        val channelSwitch: ChannelSwitchSignal
+        val channelSwitch: ChannelSwitchSignal,
+        val evenVolume: EvenVolumeAudioProcessor
     )
 
     /** [httpClient]: the client the playlist downloads use too (see AppContainer). */
@@ -95,10 +99,11 @@ object PlayerFactory {
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         val channelSwitch = ChannelSwitchSignal()
+        val evenVolume = EvenVolumeAudioProcessor()
         // Extension renderers on: FFmpeg decodes the sound formats the TV has no decoder of its own
         // for (AC-3, E-AC-3, MP2, DTS), which played with picture and no sound. A format the TV can
         // decode, or pass through to the TV set or an amplifier, still goes to the TV, which comes first.
-        val renderersFactory = FreshCodecOnChannelSwitchRenderersFactory(context, channelSwitch)
+        val renderersFactory = FreshCodecOnChannelSwitchRenderersFactory(context, channelSwitch, evenVolume)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
@@ -118,7 +123,7 @@ object PlayerFactory {
                 setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
             }
 
-        return Bundle(player, httpDataSourceFactory, trackSelector, bandwidthMeter, channelSwitch)
+        return Bundle(player, httpDataSourceFactory, trackSelector, bandwidthMeter, channelSwitch, evenVolume)
     }
 }
 
@@ -141,11 +146,25 @@ class ChannelSwitchSignal {
  *
  * This replaces the default video renderers, so the one here is the only video renderer and no
  * extension adds one: FFmpeg, which extension renderers are switched on for, only ever decodes sound.
+ *
+ * Its audio sink is the default one with [evenVolume] added to the sound's path, for the TV's own
+ * decoders and FFmpeg alike.
  */
 private class FreshCodecOnChannelSwitchRenderersFactory(
     context: Context,
-    private val channelSwitch: ChannelSwitchSignal
+    private val channelSwitch: ChannelSwitchSignal,
+    private val evenVolume: EvenVolumeAudioProcessor
 ) : DefaultRenderersFactory(context) {
+
+    override fun buildAudioSink(
+        context: Context,
+        enableFloatOutput: Boolean,
+        enableAudioTrackPlaybackParams: Boolean
+    ): AudioSink = DefaultAudioSink.Builder(context)
+        .setEnableFloatOutput(enableFloatOutput)
+        .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+        .setAudioProcessors(arrayOf(evenVolume))
+        .build()
 
     override fun buildVideoRenderers(
         context: Context,

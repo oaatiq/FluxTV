@@ -1,8 +1,9 @@
 # FluxTV — Requirements traceability
 
 How each requirement in the *FluxTV: Basic Product & System Requirements Specification* (plus the
-added **Hardware resource utilization**, **Smartphone playlist setup** and **Multiple-playlist
-management** sections) is met in this implementation.
+added **Hardware resource utilization**, **Smartphone playlist setup**, **Multiple-playlist
+management** and **Programme guide, clock, text size and even volume** sections) is met in this
+implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
@@ -142,6 +143,36 @@ management** sections) is met in this implementation.
 - **Upgrade** — `SinglePlaylistMigration` turns the single playlist of earlier versions into the
   first saved playlist, in use, with its favorites and last channel (REQ-UPD-001/002).
 - **Acceptance test** — README → Acceptance testing → *Multiple playlists*.
+
+## Programme guide, clock, text size and even volume (added section)
+- **Now / Next on the channel banner** — `ui/easymode/Overlays.kt` (`ChannelInfoBanner`,
+  `ProgrammeLine`) from `data/guide/Guide.kt` (`Guide.nowAndNext`). Two lines only, no guide grid
+  (§26). The banner stays 7 s when it has them (`AppViewModel.showBanner`); the Info / Guide key
+  (`MainActivity`, `toggleChannelInfo`) and choosing the channel already playing show it again.
+- **Guide source** — the playlist's `url-tvg` / `x-tvg-url` (`M3uParser`, kept in
+  `ChannelRepository.guideUrls` and the playlist cache), or `SavedPlaylist.guideUrl` set in Settings →
+  Playlists → *Programme guide*, which comes first.
+- **Never in the way of watching** — fetched in the background at low thread priority, 20 s after
+  the first channel plays, then when 12 h old or when the playlist or link changes
+  (`AppViewModel.keepGuideCurrent`). Streamed and cut down as it is read to the playlist's channels,
+  3 h back to 36 h ahead, titles only (`data/guide/XmltvParser.kt`); cached on disk
+  (`GuideRepository`). A failed fetch keeps the last guide and is retried hourly; a guide that is not
+  one (an error page) counts as failed.
+- **Matching** — by tvg-id, else by a normalized name (`Guide.normalizeName`).
+- **Plain-language status for the administrator** — `GuideStatus` in Settings → Playlists; `[guide]`
+  lines in the Diagnostics history, without links (REQ-SEC).
+- **Large clock** — `ClockOverlay` (time, day and date, top right, with the banner) and `ClockText`
+  (top right of the channel list); the TV's 12/24-hour setting is followed.
+- **Text size** — Settings → Preferences → *Text size on TV* (`FluxSettings.textSizePercent`: 100,
+  125, 150). `ScaledText` / `LocalTextScale` in `ui/theme/Theme.kt` scale every sp in STARTING and
+  EASY (`FluxApp`); `ChannelListOverlay` widens its panel and columns with it. Settings keeps its size.
+- **Even volume** — Settings → Preferences → *Even out the volume between channels*
+  (`FluxSettings.evenVolume`, on by default): `playback/LoudnessLeveler.kt` in the audio sink through
+  `EvenVolumeAudioProcessor` (`PlayerFactory.buildAudioSink`). Weighted level followed over ~5 s
+  (0.6 s for 3 s after a channel change), gain −12…+10 dB toward −20 dBFS, silence gated, peaks
+  limited under −1 dBFS; switching takes effect at once. Diagnostics shows its gain.
+- **Acceptance tests** — README → Acceptance testing → *Banner, guide and clock*, *Text size*,
+  *Even volume*.
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream

@@ -209,18 +209,69 @@ couple of seconds a normal channel change takes, with the channel banner while i
 | **Back** | Show the channel list (the current channel's category, e.g. Maroc) | Step up: channels → categories → leave FluxTV |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
 | **Last channel** (on remotes that have it) | Back to the channel watched before; again to return | Same |
+| **Info / Guide** (on remotes that have it) | Show the channel banner with what is on now and next; again to hide it | — |
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
 
 The channel list has two columns: **categories** on the left (Favorites and All channels first, then the
 playlist's own groups with their channel counts) and the **channels** of the highlighted category on the
-right. It opens on the category of the channel you are watching, with that channel selected.
+right. It opens on the category of the channel you are watching, with that channel selected. The time is at
+the top right of the list.
 
 Back steps back like other IPTV players: watching → the channel list → the categories column → leave
 FluxTV. The last channel (one watched for a few seconds) is remembered, so the next launch resumes
-it. Choosing the channel that is already playing just closes the list, and plays it on if something
-had paused it. **Home** also leaves (the app stays in the background), and **Settings** (hold OK, or
+it. Choosing the channel that is already playing just closes the list, plays it on if something
+had paused it, and shows its banner, so it is also a way to see what is on. **Home** also leaves (the app stays in the background), and **Settings** (hold OK, or
 MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
+
+## Banner, programme guide and clock
+
+Each channel change shows a banner at the bottom with the channel's number, logo, name and category.
+When there is a programme guide, the banner also has two lines, **Now** (with when it ends) and
+**Next** (with when it starts), and stays on a little longer (7 s instead of 4.5 s) to be read.
+A large clock with the day and date shows at the top right together with the banner. The Info or
+Guide key on remotes that have one shows the banner again without changing channel.
+
+The guide is the XMLTV file the playlist names in its first line (`#EXTM3U url-tvg="…"`, or
+`x-tvg-url`), or the link set for the playlist in **Settings → Playlists → (playlist) → Programme
+guide**, which comes first. Gzipped guides (`.xml.gz`) are fine. FluxTV fetches it in the
+background about 20 seconds after the first channel plays, so it never holds up the picture, then
+again when it is 12 hours old (it checks every hour), and when the playlist in use or its guide link
+changes. It keeps only what the banner needs, the playlist's channels from 3 hours ago to 36 hours
+ahead, titles only, and saves that, so the banner has it right after a restart. A guide that cannot
+be fetched leaves the last one in place, and it is tried again an hour later.
+
+A channel is found in the guide by its `tvg-id`, else by its name: `FR: TF1 HD`, `TF1 (backup)` and
+a guide's `TF1` all match, because the country prefix, bracketed notes, words like HD/FHD/4K,
+accents, spaces and punctuation are left out of the comparison. A programme with titles in several
+languages shows the one in the TV's language. **Settings → Playlists → (playlist)** says how many
+channels have Now and Next and when the guide was fetched, or why it could not be; the Diagnostics
+history has a `[guide]` line for each fetch (never the link, which can hold the account details).
+
+This is deliberately not a guide grid (see Non-goals): the Viewer gets what is on, without a new
+screen to learn.
+
+## Text size
+
+**Settings → Preferences → Text size on TV** makes all the text the Viewer sees, the banner, clock,
+channel list and messages, 25% (**Large**) or 50% (**Extra large**) larger than **Normal**. The
+channel list's panel and columns widen with it, so names keep as much of their length as they can.
+Settings itself keeps its normal size, since the administrator uses it; the line under the choices
+shows a channel name at the chosen size.
+
+## Even volume between channels
+
+Channels are broadcast at very different loudness, so without help the Viewer turns the volume up on
+one channel and down on the next. **Settings → Preferences → Even out the volume between channels**
+(on by default) brings quiet channels up by as much as 10 dB and loud ones down by as much as 12 dB.
+It follows each channel's level over a few seconds, so the sound inside a programme keeps its shape;
+after a channel change it adapts faster for a few seconds. Silence is not turned up, and a limiter
+keeps the result under full scale. Switching it off or on takes effect at once.
+
+It works on the sound FluxTV decodes (on the TV's own decoders or FFmpeg). Sound the TV passes
+through undecoded to an amplifier or soundbar (AC-3 over HDMI, say) cannot be levelled.
+**Settings → Diagnostics → Volume levelling** shows the gain it is applying to the channel playing,
+or says that it is off or not possible for this sound.
 
 ## Administrator / Settings
 
@@ -228,21 +279,23 @@ Reached only by a deliberate gesture (**hold OK** or the **MENU** button), so or
 can never expose destructive actions. Optionally protect it with a **PIN** (Preferences). Sections:
 
 - **Playlists** — add playlists (from a phone, or typed), see the saved ones with the one in use
-  marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link or
-  delete it. See [Playlists](#playlists) below.
+  marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link,
+  set its programme guide link, or delete it. See [Playlists](#playlists) below.
 - **Channels & favorites** — curate favorites (OK toggles ★) and enable *favorites-only* Easy Mode,
   so a 2,000-channel subscription can show your grandfather just the handful he watches. Favorites
   belong to the playlist in use; a playlist with none shows all its channels even in favorites-only
   mode, rather than nothing.
-- **Preferences** — favorites-only, max quality (Auto / 720p / 1080p), refresh-rate matching
-  (switching it off puts the TV back in its own mode at once), auto-refresh interval, the **player
+- **Preferences** — favorites-only, text size on TV (Normal / Large / Extra large), even volume
+  between channels, max quality (Auto / 720p / 1080p), refresh-rate matching (switching it off puts
+  the TV back in its own mode at once), auto-refresh interval, the **player
   name** sent to the provider (User-Agent: some providers only serve players they know; empty means
   `FluxTV/1.0`; it is used for every saved playlist), and the Settings PIN.
 - **Diagnostics** — live stream health and a persisted event history for troubleshooting: channel
   reachability, resolution, frame rate, **hardware vs software decoding**, codecs, bitrate,
-  bandwidth, buffered duration, dropped frames, buffering events, recoveries and channel startup
-  time. If FluxTV ever closes by itself, the next start adds a *crash* line saying what failed and
-  where; a picture that froze while the sound played on is restarted and noted under *decoder*.
+  bandwidth, buffered duration, dropped frames, buffering events, recoveries, channel startup
+  time and the volume levelling gain. If FluxTV ever closes by itself, the next start adds a *crash*
+  line saying what failed and where; a picture that froze while the sound played on is restarted
+  and noted under *decoder*.
 
 ## Playlists
 
@@ -297,6 +350,19 @@ The phone page is a setup session, not a service that is always on:
 on and see TV; go to the next/previous channel; find a channel; adjust volume; see the other
 channels in the current category (Back); and keep watching after a brief network interruption.
 
+**Banner, guide and clock.** With a playlist that names a guide (or a guide link set for it), change
+channel about a minute after FluxTV starts: the banner shows Now and Next with their times, and the
+clock and date show at the top right. Press Info (or choose the channel already playing in the list)
+to see the banner again. **Settings → Playlists → (playlist)** says how many channels have Now and
+Next.
+
+**Text size.** Switch **Text size on TV** to Extra large, go back to TV, and open the channel list:
+names, numbers and categories are all larger, and the list is wider.
+
+**Even volume.** Change between a quiet channel and a loud one: after a few seconds both play at
+about the same volume. **Settings → Diagnostics → Volume levelling** shows a positive gain on the
+quiet one and a negative gain on the loud one.
+
 **Multiple playlists.** Save two playlists, put the second in use in **Settings → Playlists**, then
 restart FluxTV (or the TV). TV comes back on the second playlist's channels, on its last channel,
 with no playlist prompt or choice anywhere outside Settings.
@@ -348,11 +414,12 @@ the Android version that needs the permission above).
 
 ```
 app/src/main/java/com/fluxtv/app/
-├─ data/            M3U parsing, settings (DataStore), JSON cache, repository
-├─ playback/        ExoPlayer setup, recovery, error mapping, network & frame-rate, diagnostics
+├─ data/            M3U parsing, settings (DataStore), JSON cache, repository, programme guide (XMLTV)
+├─ playback/        ExoPlayer setup, recovery, error mapping, network & frame-rate, volume levelling,
+│                   diagnostics
 ├─ setup/           the phone page behind the QR code (a small web server, during setup only)
 ├─ ui/
-│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner)
+│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock)
 │  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics
 │  ├─ components/   large-type, high-contrast, focusable TV widgets
 │  └─ AppViewModel  the Easy Mode state machine (STARTING → WATCHING ⇄ CHANNEL LIST)

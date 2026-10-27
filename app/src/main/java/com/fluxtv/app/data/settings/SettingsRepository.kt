@@ -27,10 +27,17 @@ import java.util.UUID
 /** The name a playlist gets when the administrator gives it none. */
 const val DEFAULT_PLAYLIST_NAME = "My Playlist"
 
+/** TV's text sizes, in percent of the normal size: Normal, Large and Extra large. */
+const val TEXT_SIZE_NORMAL = 100
+const val TEXT_SIZE_LARGE = 125
+const val TEXT_SIZE_EXTRA_LARGE = 150
+val TEXT_SIZES = listOf(TEXT_SIZE_NORMAL, TEXT_SIZE_LARGE, TEXT_SIZE_EXTRA_LARGE)
+
 /**
  * One playlist the administrator has saved. Its favorites and last channel belong to it, because
  * channel identities only mean something within their own playlist (REQ-PL-008): switching to
- * another playlist and back finds them as they were.
+ * another playlist and back finds them as they were. [guideUrl]: a programme guide (XMLTV) set in
+ * Settings, used instead of the ones the playlist names; blank for those.
  */
 @Serializable
 data class SavedPlaylist(
@@ -39,7 +46,8 @@ data class SavedPlaylist(
     val url: String,
     val type: String = "url",
     val favorites: Set<String> = emptySet(),
-    val lastChannelStableId: String? = null
+    val lastChannelStableId: String? = null,
+    val guideUrl: String = ""
 )
 
 fun newPlaylistId(): String = UUID.randomUUID().toString()
@@ -56,6 +64,8 @@ private object Keys {
     val FRAME_RATE = booleanPreferencesKey("frame_rate_matching")
     val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
     val USER_AGENT = stringPreferencesKey("user_agent")
+    val TEXT_SIZE = intPreferencesKey("text_size_percent")
+    val EVEN_VOLUME = booleanPreferencesKey("even_volume")
 }
 
 /** Where versions before multiple playlists kept their one playlist; read once by [SinglePlaylistMigration]. */
@@ -146,7 +156,11 @@ data class FluxSettings(
     val frameRateMatching: Boolean = true,
     val startOnBoot: Boolean = true,
     /** The player name (User-Agent) sent to the provider; blank for FluxTV's own. */
-    val userAgent: String = ""
+    val userAgent: String = "",
+    /** How large TV's text is, in percent of the normal size: one of [TEXT_SIZES]. */
+    val textSizePercent: Int = TEXT_SIZE_NORMAL,
+    /** Whether quiet channels are brought up and loud ones down to one volume. */
+    val evenVolume: Boolean = true
 ) {
     /** The User-Agent for the playlists and for channels whose playlist entry names none. */
     val effectiveUserAgent: String get() = headerValue(userAgent).ifBlank { DEFAULT_USER_AGENT }
@@ -176,7 +190,9 @@ class SettingsRepository(private val context: Context) {
             refreshIntervalHours = p[Keys.REFRESH_HOURS] ?: 12,
             frameRateMatching = p[Keys.FRAME_RATE] ?: true,
             startOnBoot = p[Keys.START_ON_BOOT] ?: true,
-            userAgent = p[Keys.USER_AGENT] ?: ""
+            userAgent = p[Keys.USER_AGENT] ?: "",
+            textSizePercent = p[Keys.TEXT_SIZE]?.takeIf { it in TEXT_SIZES } ?: TEXT_SIZE_NORMAL,
+            evenVolume = p[Keys.EVEN_VOLUME] ?: true
         )
     }
 
@@ -197,6 +213,9 @@ class SettingsRepository(private val context: Context) {
     /** A new address for the same provider's playlist keeps its favorites and last channel. */
     suspend fun setPlaylistLink(id: String, url: String, type: String) =
         editPlaylist(id) { it.copy(url = url, type = type) }
+
+    /** Blank goes back to the programme guides the playlist names. */
+    suspend fun setGuideUrl(id: String, url: String) = editPlaylist(id) { it.copy(guideUrl = url.trim()) }
 
     /** Deletes a saved playlist, never the one in use: false if [id] is in use (or already gone). */
     suspend fun deletePlaylist(id: String): Boolean {
@@ -254,5 +273,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setUserAgent(value: String) {
         context.dataStore.edit { it[Keys.USER_AGENT] = value.trim() }
+    }
+
+    suspend fun setTextSize(percent: Int) {
+        if (percent in TEXT_SIZES) context.dataStore.edit { it[Keys.TEXT_SIZE] = percent }
+    }
+
+    suspend fun setEvenVolume(value: Boolean) {
+        context.dataStore.edit { it[Keys.EVEN_VOLUME] = value }
     }
 }
