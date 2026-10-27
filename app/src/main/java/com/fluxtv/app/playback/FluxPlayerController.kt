@@ -20,6 +20,7 @@ import com.fluxtv.app.data.cache.DiagnosticsStore
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.model.DiagnosticsEvent
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
+import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 /**
  * Owns a single, reused ExoPlayer and implements the spec's reliability philosophy:
@@ -42,7 +44,8 @@ import kotlinx.coroutines.launch
 class FluxPlayerController(
     private val context: Context,
     private val diagnosticsStore: DiagnosticsStore,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val httpClient: () -> OkHttpClient
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -51,6 +54,7 @@ class FluxPlayerController(
 
     private var currentChannel: Channel? = null
     private var maxVideoHeight = 0
+    private var defaultUserAgent = DEFAULT_USER_AGENT
 
     /**
      * Whether FluxTV is on screen to be watched: set by tuning and [onResume], cleared by [onPause]
@@ -89,6 +93,10 @@ class FluxPlayerController(
     private var bufferingWatchdog: Job? = null
     private var slowRetryJob: Job? = null
     private var stabilityJob: Job? = null
+    private var frozenPictureWatch: Job? = null
+
+    /** How often this start of the channel has been restarted for a frozen picture. */
+    private var frozenRestarts = 0
 
     private val _status = MutableStateFlow(PlaybackStatus())
     val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
@@ -115,6 +123,11 @@ class FluxPlayerController(
 
     // ---- public control ----
 
+    /** The player name (User-Agent) for channels whose playlist entry names none (Preferences). */
+    fun setUserAgent(value: String) {
+        defaultUserAgent = value
+    }
+
     fun setMaxVideoHeight(height: Int) {
         maxVideoHeight = height
         val b = bundle ?: return
@@ -138,16 +151,12 @@ class FluxPlayerController(
         loadAsHls = firstTryAsHls(channel.url)
         hlsTried = loadAsHls
         plainTried = !loadAsHls
+        frozenRestarts = 0
+        frozenPictureWatch?.cancel()
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
         prepareStartMs = SystemClock.elapsedRealtime()
-
-        val factory = bundle!!.httpDataSourceFactory
-        factory.setUserAgent(channel.userAgent ?: "FluxTV/1.0")
-        val headers = HashMap<String, String>()
-        channel.referer?.let { headers["Referer"] = it }
-        factory.setDefaultRequestProperties(headers)
 
         // Reported before the player is handed the channel, so that a channel it cannot open at all
         // ends on the failure that load() reports rather than on "preparing".
@@ -221,6 +230,7 @@ class FluxPlayerController(
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
         stabilityJob?.cancel()
+        frozenPictureWatch?.cancel()
         p.stop()
         if (currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
     }
@@ -229,6 +239,7 @@ class FluxPlayerController(
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
+        frozenPictureWatch?.cancel()
         bundle?.player?.let {
             it.removeListener(playerListener)
             it.removeAnalyticsListener(analyticsListener)
@@ -256,7 +267,7 @@ class FluxPlayerController(
 
     private fun ensurePlayer() {
         if (bundle != null) return
-        val created = PlayerFactory.create(context, maxVideoHeight)
+        val created = PlayerFactory.create(context, maxVideoHeight, httpClient)
         created.player.addListener(playerListener)
         created.player.addAnalyticsListener(analyticsListener)
         bundle = created
@@ -291,9 +302,15 @@ class FluxPlayerController(
      * channel change: such a channel is reported as one that cannot be played instead.
      */
     private fun load(p: ExoPlayer, channel: Channel): Boolean = try {
+        // Set on every load, not only on a tune: a refresh can give the channel being retried new ones.
+        val request = streamRequestFor(channel, defaultUserAgent)
+        bundle?.httpDataSourceFactory?.apply {
+            setUserAgent(request.userAgent)
+            setDefaultRequestProperties(request.headers)
+        }
         p.setMediaItem(
-            if (loadAsHls) MediaItem.Builder().setUri(channel.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
-            else MediaItem.fromUri(channel.url)
+            if (loadAsHls) MediaItem.Builder().setUri(request.address).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            else MediaItem.fromUri(request.address)
         )
         p.prepare()
         // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back.
@@ -313,6 +330,7 @@ class FluxPlayerController(
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
         stabilityJob?.cancel()
+        frozenPictureWatch?.cancel()
         bundle?.player?.stop()
         logEvent("error", "Cannot play ${currentChannel?.name}: $reason")
         updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true)
@@ -343,7 +361,7 @@ class FluxPlayerController(
         val channel = currentChannel ?: return false
         if (hlsTried || loadAsHls) return false
         // An address that does say what it is (.m3u8, .mpd) was opened as that already.
-        if (Util.inferContentType(Uri.parse(channel.url)) != C.CONTENT_TYPE_OTHER) return false
+        if (Util.inferContentType(Uri.parse(streamAddress(channel.url))) != C.CONTENT_TYPE_OTHER) return false
         hlsTried = true
         loadAsHls = true
         logEvent("recovery", "Stream format of ${channel.name} not recognised: trying it as HLS")
@@ -356,9 +374,11 @@ class FluxPlayerController(
      * address ends in ".m3u", the older name of an HLS playlist. Media3 only takes ".m3u8" for HLS and
      * would open ".m3u" as a single file, which fails before [tryAsHls] gets its turn.
      */
-    private fun firstTryAsHls(url: String): Boolean =
-        url in knownHls ||
-            (url !in knownPlain && url.substringBefore('?').substringBefore('#').endsWith(".m3u", ignoreCase = true))
+    private fun firstTryAsHls(url: String): Boolean {
+        if (url in knownHls) return true
+        if (url in knownPlain) return false
+        return streamAddress(url).substringBefore('?').substringBefore('#').endsWith(".m3u", ignoreCase = true)
+    }
 
     /**
      * Opened as HLS on its first try, and the answer is not an HLS playlist: the address is opened as
@@ -454,6 +474,64 @@ class FluxPlayerController(
                 logEvent("recovery", "Playback stable for ${STABLE_PLAYBACK_MS / 1000} s: recovery budget restored")
             }
         }
+    }
+
+    /**
+     * Some TV decoders stop putting out pictures while the sound plays on: the picture freezes and
+     * nothing reports an error. While a channel plays on screen with its picture, this checks every
+     * few seconds that new frames keep coming. When none has come for [FROZEN_PICTURE_MS] while
+     * playback moved on, the decoder is let go and the channel prepared again, which builds a new
+     * one; at most [MAX_FROZEN_RESTARTS] times per tune. A picture that was never coming in steadily,
+     * such as a radio station's still image, is left alone.
+     */
+    private fun startFrozenPictureWatch() {
+        frozenPictureWatch?.cancel()
+        frozenPictureWatch = scope.launch {
+            var lastFrames = -1
+            var framesSeen = 0
+            var lastFrameAtMs = 0L
+            var positionAtLastFrame = 0L
+            while (true) {
+                delay(FROZEN_CHECK_MS)
+                val p = bundle?.player ?: return@launch
+                val counters = p.videoDecoderCounters
+                if (!onScreen || !p.isPlaying || counters == null || !p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)) {
+                    lastFrames = -1 // paused, buffering, sound only: start counting again afterwards
+                    continue
+                }
+                counters.ensureUpdated()
+                val frames = counters.renderedOutputBufferCount
+                val now = SystemClock.elapsedRealtime()
+                if (lastFrames < 0 || frames != lastFrames) {
+                    if (lastFrames in 0 until frames) framesSeen += frames - lastFrames
+                    lastFrames = frames
+                    lastFrameAtMs = now
+                    positionAtLastFrame = p.currentPosition
+                    continue
+                }
+                val frozenFor = now - lastFrameAtMs
+                val playedOn = p.currentPosition - positionAtLastFrame
+                if (frozenFor >= FROZEN_PICTURE_MS && playedOn >= FROZEN_PICTURE_MS * 2 / 3 &&
+                    framesSeen >= MIN_FRAMES_BEFORE_FREEZE
+                ) {
+                    restartFrozenPicture()
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private fun restartFrozenPicture() {
+        val p = bundle?.player ?: return
+        val channel = currentChannel ?: return
+        if (frozenRestarts >= MAX_FROZEN_RESTARTS) {
+            logEvent("decoder", "The picture of ${channel.name} keeps freezing on this TV: no more restarts until it is tuned again")
+            return
+        }
+        frozenRestarts++
+        logEvent("decoder", "The picture of ${channel.name} froze while the sound played on: restarting its decoder")
+        p.stop() // lets the decoder go: prepared again, the channel gets a new one
+        reprepareCurrent("picture froze")
     }
 
     /**
@@ -554,6 +632,7 @@ class FluxPlayerController(
                         logEvent("boot", BootTrace.stamp("Picture playing"))
                     }
                     startStabilityTimer()
+                    startFrozenPictureWatch()
                     updateStatus(PlaybackPhase.PLAYING, message = null, prompt = false)
                 }
 
@@ -687,5 +766,15 @@ class FluxPlayerController(
 
         /** The pause before the one retry a decoder error gets, for the decoder to be let go. */
         const val DECODER_RETRY_DELAY_MS = 1_500L
+
+        /** How often the frozen-picture watch looks, and how long a picture may stand still. */
+        const val FROZEN_CHECK_MS = 2_000L
+        const val FROZEN_PICTURE_MS = 6_000L
+
+        /** Frames that must have come in steadily before a stop counts as a freeze (2 s at 25 fps). */
+        const val MIN_FRAMES_BEFORE_FREEZE = 50
+
+        /** Restarts for a frozen picture per tune, so a decoder that always freezes cannot loop. */
+        const val MAX_FROZEN_RESTARTS = 3
     }
 }

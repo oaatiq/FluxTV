@@ -7,7 +7,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -21,12 +21,16 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.VideoRendererEventListener
+import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
+import okhttp3.Call
+import okhttp3.OkHttpClient
 
 /**
  * Builds a reliability-tuned ExoPlayer.
  *
  * Buffering favors uninterrupted viewing over low latency (REQ-BUF-001/002): a large 30–60s buffer,
- * capped by size on low-memory boxes, with a modest pre-roll so startup stays fast (REQ-START-004).
+ * capped by size on low-memory boxes, with a short pre-roll (1.5 s) so channels start fast
+ * (REQ-START-004).
  * Adaptive track selection is on by default and can be capped by the administrator (REQ-ADP).
  * Decoder fallback is enabled so one unsupported track doesn't kill playback (REQ-PLAY-003,
  * REQ-REL-004).
@@ -38,18 +42,22 @@ object PlayerFactory {
 
     data class Bundle(
         val player: ExoPlayer,
-        val httpDataSourceFactory: DefaultHttpDataSource.Factory,
+        val httpDataSourceFactory: OkHttpDataSource.Factory,
         val trackSelector: DefaultTrackSelector,
         val bandwidthMeter: DefaultBandwidthMeter,
         val channelSwitch: ChannelSwitchSignal
     )
 
-    fun create(context: Context, maxVideoHeight: Int): Bundle {
+    /** [httpClient]: the client the playlist downloads use too (see AppContainer). */
+    fun create(context: Context, maxVideoHeight: Int, httpClient: () -> OkHttpClient): Bundle {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 30_000,
                 /* maxBufferMs = */ 60_000,
-                /* bufferForPlaybackMs = */ 2_500,
+                // A channel starts once 1.5 s is in. At 2.5 s, one the server sends at the live rate
+                // (plain MPEG-TS) took up to a second longer to start. After a stall it waits for 5 s,
+                // so a weak connection does not stall again straight away.
+                /* bufferForPlaybackMs = */ 1_500,
                 /* bufferForPlaybackAfterRebufferMs = */ 5_000
             )
             .apply {
@@ -76,11 +84,12 @@ object PlayerFactory {
 
         val bandwidthMeter = DefaultBandwidthMeter.Builder(context).build()
 
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("FluxTV/1.0")
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
-            .setAllowCrossProtocolRedirects(true)
+        // Channels go through the same OkHttp client as the playlist: one pool of connections to the
+        // provider, and its timeouts (15 s to connect, 30 s between reads). Redirects between http and
+        // https are followed, as before. The client is asked for at the first request, which Media3
+        // makes on its loading thread, so a first tune does not build it on the main thread.
+        val httpDataSourceFactory = OkHttpDataSource.Factory(Call.Factory { httpClient().newCall(it) })
+            .setUserAgent(DEFAULT_USER_AGENT)
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)

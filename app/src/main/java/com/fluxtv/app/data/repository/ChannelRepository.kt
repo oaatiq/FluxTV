@@ -4,6 +4,7 @@ import com.fluxtv.app.data.cache.CachedPlaylist
 import com.fluxtv.app.data.cache.PlaylistCache
 import com.fluxtv.app.data.m3u.M3uEntry
 import com.fluxtv.app.data.model.Channel
+import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
 import com.fluxtv.app.data.remote.FetchResult
 import com.fluxtv.app.data.remote.PlaylistFetcher
 import com.fluxtv.app.util.sha1Hex
@@ -72,12 +73,19 @@ class ChannelRepository(
     /**
      * Fetches [source] and merges it into the lineup. With [keepNumbers] false (another provider's
      * playlist) the channels are numbered afresh instead of after the old list's highest number.
+     * [userAgent] is the player name the provider gets (FluxSettings.effectiveUserAgent).
      */
-    suspend fun refresh(source: String, type: String, sourceName: String?, keepNumbers: Boolean = true): RefreshOutcome =
+    suspend fun refresh(
+        source: String,
+        type: String,
+        sourceName: String?,
+        keepNumbers: Boolean = true,
+        userAgent: String = DEFAULT_USER_AGENT
+    ): RefreshOutcome =
         refreshLock.withLock {
             withContext(Dispatchers.IO) {
                 val merged = try {
-                    when (val result = fetcher.fetch(source, type)) {
+                    when (val result = fetcher.fetch(source, type, userAgent)) {
                         is FetchResult.Failure -> return@withContext RefreshOutcome.Failed(
                             result.reason,
                             keptExisting = _channels.value.isNotEmpty()

@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
+import com.fluxtv.app.data.remote.headerValue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -41,9 +43,14 @@ data class FluxSettings(
     val maxVideoHeight: Int = 0,
     val refreshIntervalHours: Int = 12,
     val frameRateMatching: Boolean = true,
-    val startOnBoot: Boolean = true
+    val startOnBoot: Boolean = true,
+    /** The player name (User-Agent) sent to the provider; blank for FluxTV's own. */
+    val userAgent: String = ""
 ) {
     val isConfigured: Boolean get() = !playlistUrl.isNullOrBlank()
+
+    /** The User-Agent for the playlist and for channels whose playlist entry names none. */
+    val effectiveUserAgent: String get() = headerValue(userAgent).ifBlank { DEFAULT_USER_AGENT }
 }
 
 class SettingsRepository(private val context: Context) {
@@ -60,6 +67,7 @@ class SettingsRepository(private val context: Context) {
         val REFRESH_HOURS = intPreferencesKey("refresh_hours")
         val FRAME_RATE = booleanPreferencesKey("frame_rate_matching")
         val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
+        val USER_AGENT = stringPreferencesKey("user_agent")
     }
 
     // A file that cannot be read at all reads as the defaults, rather than throwing in every caller.
@@ -77,7 +85,8 @@ class SettingsRepository(private val context: Context) {
             maxVideoHeight = p[Keys.MAX_VIDEO_HEIGHT] ?: 0,
             refreshIntervalHours = p[Keys.REFRESH_HOURS] ?: 12,
             frameRateMatching = p[Keys.FRAME_RATE] ?: true,
-            startOnBoot = p[Keys.START_ON_BOOT] ?: true
+            startOnBoot = p[Keys.START_ON_BOOT] ?: true,
+            userAgent = p[Keys.USER_AGENT] ?: ""
         )
     }
 
@@ -123,5 +132,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setStartOnBoot(value: Boolean) {
         context.dataStore.edit { it[Keys.START_ON_BOOT] = value }
+    }
+
+    suspend fun setUserAgent(value: String) {
+        context.dataStore.edit { it[Keys.USER_AGENT] = value.trim() }
     }
 }

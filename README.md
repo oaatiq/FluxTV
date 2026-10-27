@@ -14,7 +14,8 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
 ## Tech stack
 
 - **Kotlin**, single-activity **Jetpack Compose** (with `androidx.tv:tv-material`) for the 10-foot UI
-- **Media3 / ExoPlayer** for playback, adaptive streaming, buffering, recovery and diagnostics
+- **Media3 / ExoPlayer** for playback, adaptive streaming, buffering, recovery and diagnostics, over
+  the same **OkHttp** client the playlist downloads use
 - **DataStore** (settings/favorites) + a JSON playlist cache — no database, so config survives
   restarts and app updates with zero migration risk
 - **WorkManager** for unattended periodic playlist refresh
@@ -90,8 +91,10 @@ HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequen
 Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. An
 HLS channel whose address does not end in `.m3u8` plays too: one ending in `.m3u` is opened as HLS
 straight away, and when the player cannot tell another stream's format, FluxTV tries it once as HLS.
-The playlist itself can be `.m3u` or `.m3u8` either way. A channel in a format FluxTV has no player
-for (RTSP, Smooth Streaming) shows *Unable to play this channel* rather than closing the app.
+The playlist itself can be `.m3u` or `.m3u8` either way. Headers written after a `|` in a channel's
+address, as in playlists made for Kodi (`http://…|User-Agent=…&Referer=…`), are sent as headers. A
+channel in a format FluxTV has no player for (RTSP, Smooth Streaming) shows *Unable to play this
+channel* rather than closing the app.
 
 ## Start when the TV turns on
 
@@ -199,6 +202,7 @@ couple of seconds a normal channel change takes, with the channel banner while i
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |
 | **Back** | Show the channel list (the current channel's category, e.g. Maroc) | Step up: channels → categories → leave FluxTV |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
+| **Last channel** (on remotes that have it) | Back to the channel watched before; again to return | Same |
 | **Volume** | Standard TV volume | Standard TV volume |
 | **MENU / SETTINGS** | Open **Settings** | — |
 
@@ -220,12 +224,15 @@ can never expose destructive actions. Optionally protect it with a **PIN** (Pref
 - **Playlist** — set the M3U source, refresh, see channel count / last update.
 - **Channels & favorites** — curate favorites (OK toggles ★) and enable *favorites-only* Easy Mode,
   so a 2,000-channel subscription can show your grandfather just the handful he watches.
-- **Preferences** — favorites-only, max quality (Auto / 720p / 1080p), refresh-rate matching,
-  auto-refresh interval, and the Settings PIN.
+- **Preferences** — favorites-only, max quality (Auto / 720p / 1080p), refresh-rate matching
+  (switching it off puts the TV back in its own mode at once), auto-refresh interval, the **player
+  name** sent to the provider (User-Agent: some providers only serve players they know; empty means
+  `FluxTV/1.0`), and the Settings PIN.
 - **Diagnostics** — live stream health and a persisted event history for troubleshooting: channel
   reachability, resolution, frame rate, **hardware vs software decoding**, codecs, bitrate,
   bandwidth, buffered duration, dropped frames, buffering events, recoveries and channel startup
-  time.
+  time. If FluxTV ever closes by itself, the next start adds a *crash* line saying what failed and
+  where; a picture that froze while the sound played on is restarted and noted under *decoder*.
 
 ## Acceptance testing
 

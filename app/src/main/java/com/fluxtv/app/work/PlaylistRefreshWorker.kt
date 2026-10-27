@@ -36,7 +36,8 @@ class PlaylistRefreshWorker(
         val outcome = app.container.channelRepository.refresh(
             settings.playlistUrl!!,
             settings.playlistType,
-            settings.playlistName
+            settings.playlistName,
+            userAgent = settings.effectiveUserAgent
         )
         return when {
             outcome is RefreshOutcome.Success -> Result.success()

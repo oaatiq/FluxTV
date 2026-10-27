@@ -21,6 +21,9 @@ import com.fluxtv.app.ui.FluxApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -54,14 +57,22 @@ class MainActivity : ComponentActivity() {
 
         // Match the display mode to the source frame rate when enabled (§14), once the frame rate has
         // held for a moment: many TVs go black for a second or more on each mode switch, and zapping
-        // between 25/50 and 30/60 fps channels used to switch the mode at every step.
+        // between 25/50 and 30/60 fps channels used to switch the mode at every step. Switching the
+        // option off puts the TV back in its own mode straight away (it used to stay in the last
+        // matched one until FluxTV closed); switching it on matches the channel already playing.
         lifecycleScope.launch {
-            viewModel.controller.videoFrameRate.collectLatest { fps ->
-                delay(FRAME_RATE_SETTLE_MS)
-                if (viewModel.uiState.value.settings.frameRateMatching) {
+            combine(
+                viewModel.controller.videoFrameRate,
+                viewModel.uiState.map { it.settings.frameRateMatching }.distinctUntilChanged()
+            ) { fps, matching -> fps to matching }
+                .collectLatest { (fps, matching) ->
+                    if (!matching) {
+                        frameRateController.reset()
+                        return@collectLatest
+                    }
+                    delay(FRAME_RATE_SETTLE_MS)
                     frameRateController.apply(fps)
                 }
-            }
         }
     }
 
@@ -159,6 +170,11 @@ class MainActivity : ComponentActivity() {
             }
             KeyEvent.KEYCODE_CHANNEL_DOWN -> {
                 zap(event, false)
+                return true
+            }
+            // Remotes that have it: back to the channel watched before.
+            KeyEvent.KEYCODE_LAST_CHANNEL -> {
+                if (firstDown) viewModel.previousChannel()
                 return true
             }
 

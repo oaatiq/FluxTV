@@ -14,6 +14,7 @@ import com.fluxtv.app.playback.FluxPlayerController
 import com.fluxtv.app.playback.NetworkStatus
 import com.fluxtv.app.playback.PlaybackPhase
 import com.fluxtv.app.playback.PlaybackStatus
+import com.fluxtv.app.playback.streamRequestFor
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
@@ -108,6 +108,7 @@ class AppViewModel(
     private var numberJob: Job? = null
     private var transientJob: Job? = null
     private var currentChannelId: String? = null
+    private var previousChannelId: String? = null
     private var started = false
     private var resumed = false
     private var videoSurfaceReady = false
@@ -135,6 +136,7 @@ class AppViewModel(
             container.settingsRepository.settings.collect { s ->
                 _state.update { it.copy(settings = s, favorites = s.favorites, favoritesOnly = s.favoritesOnly) }
                 container.playerController.setMaxVideoHeight(s.maxVideoHeight)
+                container.playerController.setUserAgent(s.effectiveUserAgent)
             }
         }
         viewModelScope.launch {
@@ -177,9 +179,7 @@ class AppViewModel(
                 // only (REQ-START-006/007); then Easy Mode opens, with Settings reachable, while it
                 // carries on, and the channel is tuned when it lands. Awaiting it, rather than the
                 // download itself, is what lets the wait end on time: the download cannot be cut short.
-                val loading = async {
-                    container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
-                }
+                val loading = async { refreshFrom(s) }
                 firstLoad = withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { loading.await() }
                 if (firstLoad == null) {
                     _state.update { it.copy(mode = AppMode.EASY, isRefreshing = true) }
@@ -231,7 +231,7 @@ class AppViewModel(
                     awaitRetry(waitMs)
                     waitMs = (waitMs * 2).coerceAtMost(FIRST_LOAD_RETRY_MAX_MS)
                     val s = container.settingsRepository.settings.first()
-                    if (s.isConfigured) container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+                    if (s.isConfigured) refreshFrom(s)
                 }
             }
             val loaded = _state.first { it.channels.isNotEmpty() }.channels
@@ -276,12 +276,17 @@ class AppViewModel(
             container.playerController.status.first { it.phase == PlaybackPhase.PLAYING }
         }
         delay(STARTUP_REFRESH_DELAY_MS)
-        container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+        refreshFrom(s)
     }
+
+    /** Refreshes the playlist [s] is set to, sending the provider the player name it sets. */
+    private suspend fun refreshFrom(s: FluxSettings): RefreshOutcome =
+        container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName, userAgent = s.effectiveUserAgent)
 
     // ---------- tuning ----------
 
     fun tuneTo(channel: Channel) {
+        if (currentChannelId != null && currentChannelId != channel.stableId) previousChannelId = currentChannelId
         currentChannelId = channel.stableId
         numberJob?.cancel()
         _state.update {
@@ -333,6 +338,12 @@ class AppViewModel(
 
     fun channelUp() = step(1)
     fun channelDown() = step(-1)
+
+    /** The remote's last-channel key: back to the channel watched before this one, and again forth. */
+    fun previousChannel() {
+        val id = previousChannelId ?: return
+        _state.value.channels.firstOrNull { it.stableId == id }?.let(::tuneTo)
+    }
 
     private fun step(direction: Int) {
         val lineup = _state.value.lineup
@@ -435,7 +446,11 @@ class AppViewModel(
             val sameSource = url.trim() == _state.value.settings.playlistUrl
             container.settingsRepository.setPlaylist(url.trim(), cleanName, type)
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
-            val outcome = container.channelRepository.refresh(url.trim(), type, cleanName, keepNumbers = sameSource)
+            val outcome = container.channelRepository.refresh(
+                url.trim(), type, cleanName,
+                keepNumbers = sameSource,
+                userAgent = _state.value.settings.effectiveUserAgent
+            )
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
             recoverIfNothingLoaded(outcome)
         }
@@ -446,7 +461,7 @@ class AppViewModel(
         if (!s.isConfigured) return
         viewModelScope.launch {
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
-            val outcome = container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+            val outcome = refreshFrom(s)
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
             recoverIfNothingLoaded(outcome)
         }
@@ -486,20 +501,28 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setStartOnBoot(value) }
     }
 
+    /** The player name sent to the provider; blank goes back to FluxTV's own. */
+    fun setUserAgent(value: String) {
+        viewModelScope.launch { container.settingsRepository.setUserAgent(value) }
+    }
+
     fun refreshDiagnostics() = container.playerController.refreshDiagnostics()
 
     fun clearDiagnostics() = container.playerController.clearDiagnostics()
 
-    suspend fun checkReachable(url: String): Boolean = withContext(Dispatchers.IO) {
+    /** Asks for [channel] the way the player does: same address, player name and headers. */
+    suspend fun checkReachable(channel: Channel): Boolean = withContext(Dispatchers.IO) {
         try {
-            val client = OkHttpClient.Builder()
+            val client = container.httpClient.newBuilder()
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(8, TimeUnit.SECONDS)
                 .callTimeout(10, TimeUnit.SECONDS)
                 .build()
+            val stream = streamRequestFor(channel, _state.value.settings.effectiveUserAgent)
             val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "FluxTV/1.0")
+                .url(stream.address)
+                .apply { stream.headers.forEach { (name, value) -> header(name, value) } }
+                .header("User-Agent", stream.userAgent)
                 .header("Range", "bytes=0-1")
                 .build()
             client.newCall(request).execute().use { it.code < 400 }

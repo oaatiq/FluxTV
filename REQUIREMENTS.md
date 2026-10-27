@@ -17,7 +17,8 @@ added **Hardware resource utilization** section) is met in this implementation.
   tuned once FluxTV is back on screen, never played behind another app. A channel is remembered as
   the last one once it has been on for 3 s (or FluxTV leaves the screen), not at every zap.
 - **REQ-START-003** — no profile/playlist/engine/quality prompts; startup is automatic.
-- **REQ-START-004** — instant start from `PlaylistCache`; modest player pre-roll in `PlayerFactory`.
+- **REQ-START-004** — instant start from `PlaylistCache`; a channel starts once 1.5 s is buffered
+  (`PlayerFactory`), 5 s after a stall.
 - **REQ-START-005/006** — `ui/startup/StartingScreen.kt` (calm, non-technical, auto-dismissed).
 - **REQ-START-007** — a first refresh (no cache) is awaited for at most 20 s; then EASY opens with
   "Loading channels…" while it carries on, and the channel is tuned when it lands, so loading never
@@ -49,7 +50,8 @@ added **Hardware resource utilization** section) is met in this implementation.
   (`MainActivity.handleRemoteKey`).
 - **REQ-REM-003** — `event.repeatCount == 0` gating ⇒ one action per press; no unstable repeats.
 - **REQ-REM-004** — works with D-pad/OK/Back/Home/volume only; volume & Home never intercepted.
-- **REQ-REM-005** — number keys tune directly (`NumberEntryOverlay`, `AppViewModel.onDigit`).
+- **REQ-REM-005** — number keys tune directly (`NumberEntryOverlay`, `AppViewModel.onDigit`); the
+  remote's last-channel key, where there is one, goes back to the previous channel.
 - **REQ-REM-006** — ▲/▼ change channel without opening the list.
 
 ## 8–9. Channel list & favorites
@@ -88,7 +90,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   whose format the player cannot recognise (HLS served without ".m3u8") is tried once as HLS, and
   one that plays that way is opened as HLS for the rest of the session (`tryAsHls`). A ".m3u"
   address is opened as HLS from its first try, and as it is if it turns out not to be HLS
-  (`firstTryAsHls`, `tryAsPlain`).
+  (`firstTryAsHls`, `tryAsPlain`). Kodi-style headers after "|" in an address are sent as headers
+  (`streamRequestFor`), and the player name sent to providers can be set in Preferences. Channels and
+  playlists share one OkHttp client, which accepts older TLS after the modern versions.
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
   break the next.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
@@ -107,7 +111,8 @@ added **Hardware resource utilization** section) is met in this implementation.
 ## 14. Frame-rate adaptability
 - **REQ-FPS-001/002** — `FrameRateController` + ExoPlayer AFR (`VIDEO_CHANGE_FRAME_RATE_STRATEGY_*`).
 - **REQ-FPS-003/004** — only switches on fps change at equal resolution; mode de-dup; only once the
-  new frame rate has held for 3 s, so zapping does not switch the TV's mode at every step.
+  new frame rate has held for 3 s, so zapping does not switch the TV's mode at every step. Turned
+  off, the TV goes back to its own mode at once; turned on, the channel playing is matched.
 - **REQ-FPS-005** — all guarded; if unavailable, playback continues unchanged.
 
 ## 15–17. Network, reliability, recovery
@@ -118,7 +123,9 @@ added **Hardware resource utilization** section) is met in this implementation.
   instead of crashing every start.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
   "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`). A channel that cannot
-  play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried.
+  play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried. A
+  picture that stops while the sound plays on (no new frame for 6 s after frames had been coming)
+  gets a fresh decoder, at most 3 times per tune (`startFrozenPictureWatch`).
 
 ## 18. Performance
 - **REQ-PERF-001/002** — immediate key feedback; overlays are plain Compose state toggles.
@@ -137,6 +144,7 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **§20** — `ErrorMapper` produces the exact Viewer-facing sentences; technical text kept for admin.
 - **REQ-DIA-001..004** — admin-only Diagnostics screen + persisted `DiagnosticsStore` history, kept in
   memory and saved one appended line per event (the file is compacted at twice its 300-event cap).
+  A crash leaves a note (`CrashNotes`) that the next start adds to the history.
 - **REQ-CFG-001..005** — admin behind hold-OK/MENU and optional PIN; no config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
 - **REQ-SEC-001..005** — credentials never shown to the Viewer; minimal permissions (INTERNET,

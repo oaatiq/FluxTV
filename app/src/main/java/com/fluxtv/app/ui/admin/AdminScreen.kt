@@ -39,6 +39,7 @@ import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
 import com.fluxtv.app.data.model.DiagnosticsSnapshot
+import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
 import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
@@ -239,6 +240,7 @@ private fun ChannelsSection(state: UiState, vm: AppViewModel) {
 private fun PreferencesSection(state: UiState, vm: AppViewModel) {
     val context = LocalContext.current
     var pin by remember { mutableStateOf("") }
+    var userAgent by remember { mutableStateOf(state.settings.userAgent) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Column(
@@ -314,6 +316,24 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             FluxChip("Every 24 hours", state.settings.refreshIntervalHours == 24) { vm.setRefreshHours(24) }
         }
 
+        BasicText("Player name sent to the provider", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText(
+            "Some providers only serve players they know: enter the name they give (for example " +
+                "VLC/3.0.20). Empty: $DEFAULT_USER_AGENT. A channel's own entry in the playlist still comes first.",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
+        FluxTextField(
+            label = "User-Agent",
+            value = userAgent,
+            onValueChange = { userAgent = it.take(200) },
+            modifier = Modifier.fillMaxWidth(0.7f),
+            placeholder = DEFAULT_USER_AGENT
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FluxButton("Save player name") { vm.setUserAgent(userAgent) }
+            FluxButton("Use FluxTV's own") { userAgent = ""; vm.setUserAgent("") }
+        }
+
         BasicText("Settings PIN (optional)", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         BasicText(
             if (state.settings.adminPin.isBlank()) "No PIN set" else "A PIN is set",
@@ -354,10 +374,10 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
         SectionTitle("Diagnostics")
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             FluxButton("Check this channel", focusRequester = first) {
-                val url = state.currentChannel?.url
-                if (url != null) {
+                val channel = state.currentChannel
+                if (channel != null) {
                     reachability = "Checking…"
-                    scope.launch { reachability = if (vm.checkReachable(url)) "Reachable" else "Not reachable" }
+                    scope.launch { reachability = if (vm.checkReachable(channel)) "Reachable" else "Not reachable" }
                 }
             }
             FluxButton("Clear history") { vm.clearDiagnostics() }

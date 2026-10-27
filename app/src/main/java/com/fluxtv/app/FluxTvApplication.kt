@@ -25,7 +25,12 @@ class FluxTvApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         BootTrace.applicationStartedMs = SystemClock.elapsedRealtime()
+        // First, so that a crash anywhere after this leaves a note in the Diagnostics history.
+        CrashNotes.install(this) {
+            if (::container.isInitialized) container.playerController.status.value.channel?.name else null
+        }
         container = AppContainer(this)
+        appScope.launch { CrashNotes.collect(this@FluxTvApplication, container.diagnosticsStore) }
         // Coming back from standby is announced to receivers registered in code only, so FluxTV
         // listens for it from here, for as long as the process lives.
         standbyWatcher = StandbyWatcher(this, container).also { it.register() }

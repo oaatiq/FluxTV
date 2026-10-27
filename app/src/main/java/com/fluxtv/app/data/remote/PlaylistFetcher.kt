@@ -22,22 +22,18 @@ sealed class FetchResult {
  * memory than a TV box gives an app, while a channel is playing. An empty playlist comes back as an
  * empty list, which the repository reports like any other playlist with no channels.
  */
-class PlaylistFetcher(private val context: Context) {
+class PlaylistFetcher(
+    private val context: Context,
+    private val baseClient: () -> OkHttpClient = ::newHttpClient
+) {
 
-    // Built on first use, which is a refresh on a background thread. Built with the class it set up
-    // TLS on the main thread in Application.onCreate, at every start, before FluxTV showed anything.
-    private val client by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            // A stall is caught here, between reads. The whole call gets far longer: it includes
-            // reading the playlist, and at 60 s a large list over a slow line could never finish.
-            .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(10, TimeUnit.MINUTES)
-            .retryOnConnectionFailure(true)
-            .build()
-    }
+    // Built on first use, which is a refresh on a background thread. A stall is caught between reads
+    // (the base client's read timeout); the whole call gets far longer, since it includes reading the
+    // playlist, and at 60 s a large list over a slow line could never finish.
+    private val client by lazy { baseClient().newBuilder().callTimeout(10, TimeUnit.MINUTES).build() }
 
-    fun fetch(source: String, type: String): FetchResult {
+    /** [userAgent]: the player name the provider gets (Preferences, or FluxTV's own). */
+    fun fetch(source: String, type: String, userAgent: String = DEFAULT_USER_AGENT): FetchResult {
         return try {
             when {
                 source.startsWith("content:") -> {
@@ -54,7 +50,7 @@ class PlaylistFetcher(private val context: Context) {
                 else -> {
                     val request = Request.Builder()
                         .url(source)
-                        .header("User-Agent", "FluxTV/1.0")
+                        .header("User-Agent", userAgent)
                         .build()
                     client.newCall(request).execute().use { resp ->
                         if (!resp.isSuccessful) return FetchResult.Failure("HTTP ${resp.code}")
