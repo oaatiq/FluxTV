@@ -290,6 +290,10 @@ app/src/main/java/com/fluxtv/app/
 └─ MainActivity     central remote-key handling + fullscreen + frame-rate matching
 ```
 
+The launcher artwork in `app/src/main/res` — the TV home-screen tile (banner) and the app icon — is
+built from `art/fluxtv-logo.webp` by `tools/make_launcher_art.py`. It shows only on the TV's home
+screen and in app lists, never inside FluxTV.
+
 ## Non-goals (V1)
 
 No VOD/series/movie library, DVR/recording, cloud accounts, social features, multiple profiles,
