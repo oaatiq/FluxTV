@@ -94,7 +94,8 @@ added **Hardware resource utilization** section) is met in this implementation.
   (`streamRequestFor`), and the player name sent to providers can be set in Preferences. Channels and
   playlists share one OkHttp client, which accepts older TLS after the modern versions.
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
-  break the next.
+  break the next. Sound formats the TV cannot decode (AC-3, E-AC-3, MP2, DTS) go to Media3's FFmpeg
+  extension; formats the TV decodes or passes through still go to the TV first.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
 - **REQ-PLAY-006 / REQ-BUF-004** — phases distinguish loading / transient / prolonged / failure in
   `FluxPlayerController`.

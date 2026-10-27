@@ -6,7 +6,10 @@ lifecycle = "2.8.6"
 activityCompose = "1.9.3"
 composeBom = "2024.09.03"
 tvMaterial = "1.0.0"
-media3 = "1.4.1"
+# 1.5.0, not 1.4.x: the FFmpeg audio decoder below is published for 1.5.0 and not for any 1.4 release,
+# and every Media3 module must be on the same version.
+media3 = "1.5.0"
+media3FfmpegDecoder = "1.5.0+1"
 datastore = "1.1.1"
 serialization = "1.7.3"
 coroutines = "1.8.1"
@@ -34,6 +37,8 @@ androidx-media3-exoplayer-dash = { group = "androidx.media3", name = "media3-exo
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 androidx-media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
 androidx-media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
+# Media3's FFmpeg extension built for Android (Maven Central; Google does not publish one).
+jellyfin-media3-ffmpeg-decoder = { group = "org.jellyfin.media3", name = "media3-ffmpeg-decoder", version.ref = "media3FfmpegDecoder" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

@@ -14,8 +14,9 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
 ## Tech stack
 
 - **Kotlin**, single-activity **Jetpack Compose** (with `androidx.tv:tv-material`) for the 10-foot UI
-- **Media3 / ExoPlayer** for playback, adaptive streaming, buffering, recovery and diagnostics, over
-  the same **OkHttp** client the playlist downloads use
+- **Media3 / ExoPlayer** for playback, adaptive streaming, buffering, recovery and diagnostics, with
+  its FFmpeg extension for sound formats the TV cannot decode, over the same **OkHttp** client the
+  playlist downloads use
 - **DataStore** (settings/favorites) + a JSON playlist cache — no database, so config survives
   restarts and app updates with zero migration risk
 - **WorkManager** for unattended periodic playlist refresh
@@ -92,7 +93,8 @@ Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DR
 HLS channel whose address does not end in `.m3u8` plays too: one ending in `.m3u` is opened as HLS
 straight away, and when the player cannot tell another stream's format, FluxTV tries it once as HLS.
 The playlist itself can be `.m3u` or `.m3u8` either way. Headers written after a `|` in a channel's
-address, as in playlists made for Kodi (`http://…|User-Agent=…&Referer=…`), are sent as headers. A
+address, as in playlists made for Kodi (`http://…|User-Agent=…&Referer=…`), are sent as headers.
+Sound in AC-3, E-AC-3, MP2 or DTS plays on TVs without a decoder of their own for it (FFmpeg). A
 channel in a format FluxTV has no player for (RTSP, Smooth Streaming) shows *Unable to play this
 channel* rather than closing the app.
 

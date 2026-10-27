@@ -95,9 +95,12 @@ object PlayerFactory {
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         val channelSwitch = ChannelSwitchSignal()
+        // Extension renderers on: FFmpeg decodes the sound formats the TV has no decoder of its own
+        // for (AC-3, E-AC-3, MP2, DTS), which played with picture and no sound. A format the TV can
+        // decode, or pass through to the TV set or an amplifier, still goes to the TV, which comes first.
         val renderersFactory = FreshCodecOnChannelSwitchRenderersFactory(context, channelSwitch)
             .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
         val player = ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(loadControl)
@@ -136,7 +139,8 @@ class ChannelSwitchSignal {
  * still reuse it and stay fast, and resolution changes inside one stream are left alone. A software
  * decoder (the fallback when the hardware one failed to start) is never carried to the next channel.
  *
- * Extension renderers are switched off for this app, so the video renderer is the only one added here.
+ * This replaces the default video renderers, so the one here is the only video renderer and no
+ * extension adds one: FFmpeg, which extension renderers are switched on for, only ever decodes sound.
  */
 private class FreshCodecOnChannelSwitchRenderersFactory(
     context: Context,

@@ -84,6 +84,9 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.datasource.okhttp)
+    // Sound in AC-3, E-AC-3, MP2 or DTS on a TV with no decoder of its own for it (picture, no
+    // sound). Adds about 1.4 MB of native code per processor type to the APK.
+    implementation(libs.jellyfin.media3.ffmpeg.decoder)
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
