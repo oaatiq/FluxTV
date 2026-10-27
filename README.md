@@ -81,6 +81,11 @@ entry). You can watch/operate it from a dev machine with `scrcpy`.
 3. Press **Back** repeatedly to return to TV. From now on, launching goes straight to live TV on the
    last channel.
 
+If the playlist cannot be loaded and none was saved before (the TV started before its network was
+up, or the provider is down), TV shows *Can't load the channels* and FluxTV keeps trying: as soon as
+the network is back, and otherwise at growing intervals up to every 15 minutes. TV starts on its own
+when the channels arrive.
+
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. A
 channel in a format FluxTV has no player for (RTSP, Smooth Streaming) shows *Unable to play this

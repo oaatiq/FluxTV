@@ -11,6 +11,7 @@ import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.data.repository.RefreshOutcome
 import com.fluxtv.app.data.settings.FluxSettings
 import com.fluxtv.app.playback.FluxPlayerController
+import com.fluxtv.app.playback.NetworkStatus
 import com.fluxtv.app.playback.PlaybackPhase
 import com.fluxtv.app.playback.PlaybackStatus
 import com.fluxtv.app.work.PlaylistRefreshWorker
@@ -67,7 +68,9 @@ data class UiState(
     val startupMessage: String = "Starting television…",
     val lastUpdatedMs: Long = 0L,
     val isRefreshing: Boolean = false,
-    val lastRefreshMessage: String? = null
+    val lastRefreshMessage: String? = null,
+    /** A playlist is set but none could be loaded, and none was saved before: FluxTV keeps trying. */
+    val firstLoadFailed: Boolean = false
 ) {
     /** Channels the Viewer may reach in Easy Mode (favorites-only aware), ordered by number. */
     val lineup: List<Channel>
@@ -100,6 +103,7 @@ class AppViewModel(
     val controller: FluxPlayerController get() = container.playerController
 
     private var bannerJob: Job? = null
+    private var firstLoadJob: Job? = null
     private var lastChannelJob: Job? = null
     private var numberJob: Job? = null
     private var transientJob: Job? = null
@@ -166,36 +170,96 @@ class AppViewModel(
             }
 
             val startedFromCache = container.channelRepository.channels.value.isNotEmpty()
+            var firstLoad: RefreshOutcome? = null
             if (!startedFromCache) {
                 _state.update { it.copy(startupMessage = "Preparing television…") }
                 // A first download can take minutes over a slow line. It is waited for a bounded time
                 // only (REQ-START-006/007); then Easy Mode opens, with Settings reachable, while it
                 // carries on, and the channel is tuned when it lands. Awaiting it, rather than the
                 // download itself, is what lets the wait end on time: the download cannot be cut short.
-                val firstLoad = async {
+                val loading = async {
                     container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
                 }
-                if (withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { firstLoad.await() } == null) {
+                firstLoad = withTimeoutOrNull(FIRST_LOAD_WAIT_MS) { loading.await() }
+                if (firstLoad == null) {
                     _state.update { it.copy(mode = AppMode.EASY, isRefreshing = true) }
-                    firstLoad.await()
+                    firstLoad = loading.await()
                     _state.update { it.copy(isRefreshing = false) }
                 }
             }
 
             val sorted = withContext(Dispatchers.Default) { container.channelRepository.channels.value.sortedBy { it.number } }
-            val lineup = if (s.favoritesOnly) sorted.filter { it.stableId in s.favorites } else sorted
 
             // Settings may have been opened during a long first load; it is left open.
             _state.update { if (it.mode == AppMode.STARTING) it.copy(mode = AppMode.EASY) else it }
-            if (lineup.isNotEmpty()) {
-                val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
-                if (resumed && _state.value.mode == AppMode.EASY) tuneTo(target) else tuneWhenBack(target)
+            if (sorted.isEmpty()) {
+                // Nothing saved from before, and the download failed. Settings says why.
+                firstLoad?.let { outcome -> _state.update { it.copy(lastRefreshMessage = describe(outcome)) } }
+                recoverFirstLoad()
+                return@launch
             }
+            tuneStartChannel(s, sorted)
 
             // Started from the cache: pick up provider updates in the background. After a first load
             // the playlist has just been fetched, and is not fetched twice.
             if (startedFromCache) launch { refreshAfterStart(s) }
         }
+    }
+
+    /** Tunes the channel FluxTV starts on: the one watched last, else the first of the lineup. */
+    private fun tuneStartChannel(s: FluxSettings, sorted: List<Channel>) {
+        val lineup = if (s.favoritesOnly) sorted.filter { it.stableId in s.favorites } else sorted
+        if (lineup.isEmpty()) return
+        val target = lineup.firstOrNull { it.stableId == s.lastChannelStableId } ?: lineup.first()
+        if (resumed && _state.value.mode == AppMode.EASY) tuneTo(target) else tuneWhenBack(target)
+    }
+
+    /**
+     * A playlist is set, but none could be loaded and none was saved before: typically the TV started
+     * FluxTV before its network was up. Easy Mode used to say "add your playlist", though one was set,
+     * and nothing tried again until the periodic job, hours later. Now it says FluxTV is trying, tries
+     * again as soon as the network is back and at growing intervals meanwhile, and tunes in once a
+     * playlist has loaded, whichever way it came (these tries, the periodic job, or Settings).
+     */
+    private fun recoverFirstLoad() {
+        if (firstLoadJob?.isActive == true) return
+        firstLoadJob = viewModelScope.launch {
+            _state.update { it.copy(firstLoadFailed = true) }
+            val retries = launch {
+                var waitMs = FIRST_LOAD_RETRY_MS
+                while (true) {
+                    awaitRetry(waitMs)
+                    waitMs = (waitMs * 2).coerceAtMost(FIRST_LOAD_RETRY_MAX_MS)
+                    val s = container.settingsRepository.settings.first()
+                    if (s.isConfigured) container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
+                }
+            }
+            val loaded = _state.first { it.channels.isNotEmpty() }.channels
+            retries.cancel()
+            _state.update {
+                it.copy(
+                    firstLoadFailed = false,
+                    // The failure Settings has been showing is over, whichever way the playlist came.
+                    lastRefreshMessage = if (it.isRefreshing) it.lastRefreshMessage
+                    else describe(RefreshOutcome.Success(loaded.size))
+                )
+            }
+            // Leaving Settings tunes a channel itself if the playlist came in while it was open.
+            if (_state.value.currentChannel == null) {
+                tuneStartChannel(container.settingsRepository.settings.first(), loaded)
+            }
+        }
+    }
+
+    /** Waits [ms] before the next try, or less if the network comes back meanwhile. */
+    private suspend fun awaitRetry(ms: Long) {
+        val network = container.networkMonitor.status
+        val cameBack = withTimeoutOrNull(ms) {
+            network.first { it == NetworkStatus.UNAVAILABLE }
+            network.first { it == NetworkStatus.AVAILABLE }
+        }
+        // A network that has only just connected can need a moment more before addresses resolve.
+        if (cameBack != null) delay(NETWORK_SETTLE_MS)
     }
 
     /**
@@ -373,6 +437,7 @@ class AppViewModel(
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
             val outcome = container.channelRepository.refresh(url.trim(), type, cleanName, keepNumbers = sameSource)
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
+            recoverIfNothingLoaded(outcome)
         }
     }
 
@@ -383,6 +448,14 @@ class AppViewModel(
             _state.update { it.copy(isRefreshing = true, lastRefreshMessage = null) }
             val outcome = container.channelRepository.refresh(s.playlistUrl!!, s.playlistType, s.playlistName)
             _state.update { it.copy(isRefreshing = false, lastRefreshMessage = describe(outcome)) }
+            recoverIfNothingLoaded(outcome)
+        }
+    }
+
+    /** A playlist entered in Settings that would not load, with no channels to fall back on, is retried. */
+    private fun recoverIfNothingLoaded(outcome: RefreshOutcome) {
+        if (outcome is RefreshOutcome.Failed && container.channelRepository.channels.value.isEmpty()) {
+            recoverFirstLoad()
         }
     }
 
@@ -535,6 +608,13 @@ class AppViewModel(
     companion object {
         /** How long a first playlist download holds the start-up screen before Easy Mode opens. */
         private const val FIRST_LOAD_WAIT_MS = 20_000L
+
+        /** After a failed first load: the gap before the first retry, doubled each time up to the max. */
+        private const val FIRST_LOAD_RETRY_MS = 15_000L
+        private const val FIRST_LOAD_RETRY_MAX_MS = 15 * 60_000L
+
+        /** How long a network that has just come back gets before the playlist is tried again. */
+        private const val NETWORK_SETTLE_MS = 3_000L
 
         /** The start-up refresh waits this long for the first channel to play, then this much more. */
         private const val FIRST_PLAY_WAIT_MS = 60_000L

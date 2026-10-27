@@ -48,7 +48,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         )
 
         if (state.channels.isEmpty()) {
-            NoChannelsHint(loading = state.isRefreshing)
+            NoChannelsHint(loading = state.isRefreshing, failed = state.firstLoadFailed)
         }
 
         val channel = state.currentChannel
@@ -101,19 +101,31 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     }
 }
 
-/** [loading]: a first playlist download is still running (it can take minutes over a slow line). */
+/**
+ * [loading]: a first playlist download is still running (it can take minutes over a slow line).
+ * [failed]: a playlist is set but could not be loaded, and FluxTV is trying again.
+ */
 @Composable
-private fun NoChannelsHint(loading: Boolean) {
+private fun NoChannelsHint(loading: Boolean, failed: Boolean) {
+    val (title, detail) = when {
+        loading -> "Loading channels…" to
+            "The first time can take a few minutes. TV starts on its own when they arrive."
+        failed -> "Can't load the channels" to
+            "FluxTV keeps trying, and TV starts on its own when they arrive.\n" +
+            "If this lasts, check the internet connection and the playlist address in Settings:\n" +
+            "press the MENU button, or press and hold OK."
+        else -> "No channels yet" to
+            "Open Settings to add your playlist.\nPress the MENU button, or press and hold OK."
+    }
     Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BasicText(
-                if (loading) "Loading channels…" else "No channels yet",
+                title,
                 style = TextStyle(color = FluxOnSurface, fontSize = 34.sp, fontWeight = FontWeight.Bold)
             )
             Spacer(Modifier.height(16.dp))
             BasicText(
-                if (loading) "The first time can take a few minutes. TV starts on its own when they arrive."
-                else "Open Settings to add your playlist.\nPress the MENU button, or press and hold OK.",
+                detail,
                 modifier = Modifier.padding(horizontal = 24.dp),
                 style = TextStyle(color = FluxMuted, fontSize = 22.sp, textAlign = TextAlign.Center)
             )

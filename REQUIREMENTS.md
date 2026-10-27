@@ -22,7 +22,10 @@ added **Hardware resource utilization** section) is met in this implementation.
 - **REQ-START-007** — a first refresh (no cache) is awaited for at most 20 s; then EASY opens with
   "Loading channels…" while it carries on, and the channel is tuned when it lands, so loading never
   hangs and a large list over a slow line still gets through (the download may take up to 10 min).
-- **REQ-START-008** — on empty/failed restore, EASY still opens and recovery/next-channel apply.
+- **REQ-START-008** — on empty/failed restore, EASY still opens and recovery/next-channel apply. A
+  first load that fails with nothing cached says FluxTV is trying again (not "add your playlist"),
+  retries when the network returns and at growing intervals up to 15 min
+  (`AppViewModel.recoverFirstLoad`), and tunes once channels arrive by any path.
 - **REQ-SEN-003 (0 actions to watch)** — `BootReceiver` starts FluxTV after a boot and
   `StandbyWatcher` brings it to the front when the TV wakes from standby (the remote's power button
   suspends the TV and sends no boot signal), both behind the same preference.
