@@ -632,7 +632,8 @@ class AppViewModel(
         viewModelScope.launch {
             val inUse = id == s.activePlaylistId
             val edited = playlist.copy(url = newLink, type = type)
-            val outcome = if (inUse) container.channelRepository.activate(edited, userAgent = s.effectiveUserAgent)
+            // The same provider's list at a new link: its channels keep their numbers.
+            val outcome = if (inUse) container.channelRepository.activate(edited, keepNumbers = true, userAgent = s.effectiveUserAgent)
             else container.channelRepository.check(newLink, type, s.effectiveUserAgent)
             val message = when (outcome) {
                 is RefreshOutcome.Success -> {

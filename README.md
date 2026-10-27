@@ -260,6 +260,12 @@ playlist name, link or choice, and the Viewer is never asked to pick one.
   Settings resumes that playlist's own last channel, or its first.
 - **Each playlist keeps its own** favorites and last channel, so switching away and back finds them
   as they were. The playlist in use is remembered across restarts, and only it is refreshed.
+- **Channel numbers stay put.** A refresh keeps each channel's number, favorite and last-channel
+  mark; channels the provider adds get the next numbers after the last one, and removed ones go
+  without moving the others. This holds when the provider moves to another server too, within the
+  same link or through **Change link**: a channel it still has is recognised by its name and its
+  address apart from the server (`http://server:port`), or else by its name and category. A new
+  link to a list that is mostly another one starts again at #1.
 - **The playlist in use cannot be deleted**: put another one in use first.
 - Playback trouble never switches playlists by itself; FluxTV keeps retrying the one in use.
 - Updating from a version with a single playlist keeps it, as the first saved playlist and the one in

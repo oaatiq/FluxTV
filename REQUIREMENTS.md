@@ -83,7 +83,12 @@ management** sections) is met in this implementation.
 - **REQ-PL-008** — stable IDs (`tvg-id` or name+URL hash; a later channel with an already used tvg-id
   gets both) preserve favorites & numbering on refresh. The hash still uses the name as it was
   read before names kept their commas (`M3uEntry.idName`), so no identity changed with that fix.
-  Loading a different playlist address numbers its channels afresh; the channel on screen follows
+  A channel whose address changed (the provider moved server, or new account details) keeps its
+  identity, so its number and favorite: `ChannelRepository.recognizeMoved` matches it to the old
+  channel with the same name and address apart from the server, else the same name and group. Only
+  channels the provider added get new numbers, after the last one. *Change link* keeps the numbers
+  too, unless the new list is mostly another one (fewer than half of either list in common);
+  switching to another saved playlist numbers its channels afresh. The channel on screen follows
   the playlist (a new address after a refresh, or the new provider's first channel).
 
 ## Smartphone playlist setup (added section)
