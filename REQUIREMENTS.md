@@ -161,7 +161,10 @@ implementation.
   (`AppViewModel.keepGuideCurrent`). Streamed and cut down as it is read to the playlist's channels,
   3 h back to 36 h ahead, titles only (`data/guide/XmltvParser.kt`); cached on disk
   (`GuideRepository`). A failed fetch keeps the last guide and is retried hourly; a guide that is not
-  one (an error page) counts as failed.
+  one (an error page) counts as failed. A playlist switch is acted on once its channels and guide
+  links have both arrived (`GUIDE_SETTLE_MS`), so the old playlist's guide is never fetched for the
+  new one. Channels a playlist refresh adds are noticed (`Guide.covers`) and the guide fetched again
+  at the next hourly look. HTML entities in titles are read as letters (`XmltvParser.cleanTitle`).
 - **Matching** — by tvg-id, else by a normalized name (`Guide.normalizeName`).
 - **Plain-language status for the administrator** — `GuideStatus` in Settings → Playlists; `[guide]`
   lines in the Diagnostics history, without links (REQ-SEC).

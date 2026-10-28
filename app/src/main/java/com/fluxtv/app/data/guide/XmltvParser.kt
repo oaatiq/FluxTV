@@ -32,6 +32,11 @@ object XmltvParser {
         val titles = HashMap<String, String>()
         var total = 0
         var brokenOff = false
+        // HTML names for letters ("M&eacute;t&eacute;o"), which XML does not know: the relaxed parser
+        // would drop them, and the title with them.
+        for ((name, text) in NAMED) {
+            if (name !in XML_ENTITIES) runCatching { parser.defineEntityReplacementText(name, text) }
+        }
         try {
             var event = parser.eventType
             while (event != XmlPullParser.END_DOCUMENT) {
@@ -121,12 +126,67 @@ object XmltvParser {
             if (event == XmlPullParser.END_TAG && parser.depth == depth) break
             if (event == XmlPullParser.START_TAG && parser.depth == depth + 1 && parser.name == "title") {
                 val lang = parser.getAttributeValue(null, "lang")
-                val text = parser.nextText().trim().takeIf { it.isNotEmpty() } ?: continue
+                val text = cleanTitle(parser.nextText()) ?: continue
                 if (first == null) first = text
                 if (inLanguage == null && lang != null && lang.startsWith(language, ignoreCase = true)) inLanguage = text
             }
         }
         return inLanguage ?: first
+    }
+
+    private val WHITESPACE = Regex("\\s+")
+    private val ENTITY = Regex("&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,7});")
+
+    private val XML_ENTITIES = setOf("amp", "lt", "gt", "quot", "apos")
+
+    /** The HTML names a guide may use for a letter or sign, where XML only knows five. */
+    private val NAMED: Map<String, String> = buildMap {
+        put("amp", "&"); put("lt", "<"); put("gt", ">"); put("quot", "\""); put("apos", "'"); put("nbsp", " ")
+        put("rsquo", "\u2019"); put("lsquo", "\u2018"); put("rdquo", "\u201D"); put("ldquo", "\u201C")
+        put("laquo", "\u00AB"); put("raquo", "\u00BB"); put("hellip", "\u2026"); put("ndash", "\u2013")
+        put("mdash", "\u2014"); put("euro", "\u20AC"); put("deg", "\u00B0"); put("middot", "\u00B7")
+        put("bull", "\u2022"); put("copy", "\u00A9"); put("reg", "\u00AE"); put("iexcl", "\u00A1")
+        put("iquest", "\u00BF"); put("szlig", "\u00DF")
+        // Accented letters, in both cases: "eacute" is é, "Eacute" É.
+        val letters = mapOf(
+            "agrave" to 'à', "aacute" to 'á', "acirc" to 'â', "atilde" to 'ã', "auml" to 'ä', "aring" to 'å',
+            "aelig" to 'æ', "ccedil" to 'ç', "egrave" to 'è', "eacute" to 'é', "ecirc" to 'ê', "euml" to 'ë',
+            "igrave" to 'ì', "iacute" to 'í', "icirc" to 'î', "iuml" to 'ï', "ntilde" to 'ñ', "ograve" to 'ò',
+            "oacute" to 'ó', "ocirc" to 'ô', "otilde" to 'õ', "ouml" to 'ö', "oslash" to 'ø', "oelig" to 'œ',
+            "ugrave" to 'ù', "uacute" to 'ú', "ucirc" to 'û', "uuml" to 'ü', "yacute" to 'ý', "eth" to 'ð',
+            "thorn" to 'þ'
+        )
+        for ((name, letter) in letters) {
+            put(name, letter.toString())
+            put(name.replaceFirstChar { it.uppercaseChar() }, letter.uppercaseChar().toString())
+        }
+        put("yuml", "\u00FF"); put("Yuml", "\u0178")
+    }
+
+    /**
+     * A title as the banner can show it: on one line, without runs of spaces, and with the letters a
+     * guide wrote as HTML entities ("M&eacute;t&eacute;o", or "&amp;eacute;" written twice over) as
+     * the letters themselves. Those written once the parser already turns into letters (see [parse]);
+     * those written twice over come out of it as "&eacute;", and are turned into letters here.
+     */
+    internal fun cleanTitle(raw: String): String? {
+        var s = raw
+        // Twice at most: an entity written over again ("&amp;eacute;") comes out of the first pass
+        // as one ("&eacute;").
+        repeat(2) {
+            if ('&' !in s) return@repeat
+            s = ENTITY.replace(s) { m -> decodeEntity(m.groupValues[1]) ?: m.value }
+        }
+        return s.replace(WHITESPACE, " ").trim().takeIf { it.isNotEmpty() }
+    }
+
+    private fun decodeEntity(body: String): String? {
+        if (!body.startsWith('#')) return NAMED[body]
+        val code = if (body.length > 1 && (body[1] == 'x' || body[1] == 'X')) body.substring(2).toIntOrNull(16)
+        else body.substring(1).toIntOrNull()
+        // No control characters, nor halves of a pair, nor what is past the last code point.
+        if (code == null || code < 0x20 || code in 0xD800..0xDFFF || code > 0x10FFFF) return null
+        return String(Character.toChars(code))
     }
 
     /** Moves past the element the parser is on, whatever it holds. */

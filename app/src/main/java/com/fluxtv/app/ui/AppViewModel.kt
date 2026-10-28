@@ -74,8 +74,14 @@ private fun groupsOf(sorted: List<Channel>): Map<String, List<Channel>> =
 private fun lineupOf(channels: List<Channel>, favorites: Set<String>, favoritesOnly: Boolean): List<Channel> =
     if (!favoritesOnly) channels else channels.filter { it.stableId in favorites }.ifEmpty { channels }
 
-/** The programme guides to load ([sources]: none, for no guide) and the playlist they are for. */
-private data class GuideRequest(val sources: List<String>, val playlistId: String?)
+/**
+ * The programme guides to load ([sources]: none, for no guide), the playlist they are for, and its
+ * [channels]: compared by identity, as a playlist refresh hands over a new list.
+ */
+private class GuideRequest(val sources: List<String>, val playlistId: String?, val channels: List<Channel>) {
+    fun sameAs(other: GuideRequest): Boolean =
+        sources == other.sources && playlistId == other.playlistId && channels === other.channels
+}
 
 /**
  * The phone setup session, while Settings shows its QR code. [address] is what the code holds: null
@@ -364,6 +370,10 @@ class AppViewModel(
      * large guide does not hold up the picture, loads the guide when it is missing, made for another
      * playlist or link, or half a day old, and looks again every hour. A guide that would not load is
      * tried again then too.
+     *
+     * A playlist switch hands over its channels and its guide links one after the other, so for a
+     * moment the new playlist looks as if it had the old one's guide. A guide download cannot be
+     * stopped once it runs, so a change is only acted on once nothing else has changed for a moment.
      */
     private fun keepGuideCurrent() {
         if (guideJob != null) return
@@ -373,14 +383,15 @@ class AppViewModel(
             }
             delay(GUIDE_START_DELAY_MS)
             val repository = container.channelRepository
-            combine(repository.guideUrls, repository.channels, container.settingsRepository.settings) { fromPlaylist, _, s ->
+            combine(repository.guideUrls, repository.channels, container.settingsRepository.settings) { fromPlaylist, channels, s ->
                 // The playlist the channels are from, which during a switch can be ahead of Settings.
                 val id = repository.playlistId
                 val set = s.playlists.firstOrNull { it.id == id }?.guideUrl.orEmpty()
-                GuideRequest(if (set.isNotBlank()) listOf(set) else fromPlaylist, id)
+                GuideRequest(if (set.isNotBlank()) listOf(set) else fromPlaylist, id, channels)
             }
-                .distinctUntilChanged()
+                .distinctUntilChanged { old, new -> old.sameAs(new) }
                 .collectLatest { request ->
+                    delay(GUIDE_SETTLE_MS)
                     while (true) {
                         updateGuide(request)
                         delay(GUIDE_CHECK_MS)
@@ -395,9 +406,15 @@ class AppViewModel(
             if (guides.guide.value.updatedAtMs != 0L) guides.clear()
             return
         }
-        if (guides.isCurrent(request.sources, request.playlistId, GuideRepository.MAX_AGE_MS)) return
-        val channels = container.channelRepository.channels.value
+        val channels = request.channels
         if (channels.isEmpty()) return
+        if (guides.isCurrent(request.sources, request.playlistId, GuideRepository.MAX_AGE_MS)) {
+            // Channels the playlist gained since the guide was fetched have no programmes in it. A
+            // guide fetched within the hour is left as it is, so that a playlist that keeps changing
+            // does not have the guide fetched over and over; the hourly look comes back to it.
+            val age = System.currentTimeMillis() - guides.guide.value.updatedAtMs
+            if (age < GUIDE_CHECK_MS || guides.covers(channels)) return
+        }
         val outcome = guides.refresh(request.sources, request.playlistId, channels, _state.value.settings.effectiveUserAgent)
         // Links are not logged: a guide's link can carry the provider's user name and password.
         val message = when (outcome) {
@@ -430,14 +447,16 @@ class AppViewModel(
 
     /**
      * The channel banner, for a while: longer when it has the guide's Now / Next to read, which takes
-     * longer than a channel's name.
+     * longer than a channel's name. Whether it has them is asked when it would go, not when it comes:
+     * just after start-up the saved guide can arrive while the first banner is on screen.
      */
     private fun showBanner(channel: Channel) {
-        val hasGuide = container.guideRepository.guide.value.nowAndNext(channel, System.currentTimeMillis()) != null
         _state.update { it.copy(showInfoBanner = true) }
         bannerJob?.cancel()
         bannerJob = viewModelScope.launch {
-            delay(if (hasGuide) BANNER_WITH_GUIDE_MS else BANNER_MS)
+            delay(BANNER_MS)
+            val hasGuide = container.guideRepository.guide.value.nowAndNext(channel, System.currentTimeMillis()) != null
+            if (hasGuide) delay(BANNER_WITH_GUIDE_MS - BANNER_MS)
             _state.update { it.copy(showInfoBanner = false) }
         }
     }
@@ -1061,6 +1080,9 @@ class AppViewModel(
         /** The guide is first looked at this long after the first channel plays, then every hour. */
         private const val GUIDE_START_DELAY_MS = 20_000L
         private const val GUIDE_CHECK_MS = HOUR_MS
+
+        /** How long the playlist and the guide link have to stay as they are before a guide is fetched. */
+        private const val GUIDE_SETTLE_MS = 2_000L
 
         /** How long a channel has to stay on before it is remembered for the next start. */
         private const val LAST_CHANNEL_SAVE_DELAY_MS = 3_000L

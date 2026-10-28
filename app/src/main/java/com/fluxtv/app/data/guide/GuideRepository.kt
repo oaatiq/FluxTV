@@ -36,7 +36,9 @@ private class CachedGuide(
     val updatedAtMs: Long,
     val sources: List<String>,
     val playlistId: String? = null,
-    val channels: List<CachedGuideChannel>
+    val channels: List<CachedGuideChannel>,
+    /** See [Guide.covers]; a guide saved before it was kept counts as covering no channel. */
+    val wanted: IntArray = IntArray(0)
 )
 
 /** How loading the guide went. [problem] is in plain words, for Settings; [reason] is for the history. */
@@ -86,7 +88,7 @@ class GuideRepository(
             } ?: return@withLock
             if (cached.playlistId != playlistId || _guide.value.updatedAtMs > cached.updatedAtMs) return@withLock
             val channels = cached.channels.map { GuideChannel(it.keys, it.programmes) }
-            _guide.value = guideOf(channels, cached.updatedAtMs, cached.sources, playlistId)
+            _guide.value = guideOf(channels, cached.updatedAtMs, cached.sources, playlistId, cached.wanted)
         }
     }
 
@@ -96,6 +98,15 @@ class GuideRepository(
         val age = System.currentTimeMillis() - g.updatedAtMs
         // A TV's clock can be wrong until it has synced after power-on: an age below zero is unknown.
         return g.sources == sources && g.playlistId == playlistId && age in 0 until maxAgeMs
+    }
+
+    /**
+     * Whether the guide there is was cut down for all of [channels] (see [Guide.covers]). Working that
+     * out takes every channel's name apart, so it is done away from the main thread.
+     */
+    suspend fun covers(channels: List<Channel>): Boolean {
+        val guide = _guide.value
+        return withContext(Dispatchers.Default) { guide.covers(channels) }
     }
 
     /** The playlist in use names no guide, and none is set in Settings: there is nothing to show. */
@@ -184,9 +195,10 @@ class GuideRepository(
                 return failure
             }
 
-            val guide = guideOf(all, now, sources, playlistId)
+            val wantedHashes = wanted.map { it.hashCode() }.distinct().sorted().toIntArray()
+            val guide = guideOf(all, now, sources, playlistId, wantedHashes)
             _guide.value = guide
-            save(CachedGuide(now, sources, playlistId, all.map { CachedGuideChannel(it.keys, it.programmes) }))
+            save(CachedGuide(now, sources, playlistId, all.map { CachedGuideChannel(it.keys, it.programmes) }, wantedHashes))
             return GuideOutcome.Loaded(guide.channelCount, brokenOff)
         } finally {
             Process.setThreadPriority(thread, priority)
@@ -231,10 +243,16 @@ class GuideRepository(
         }
     }
 
-    private fun guideOf(channels: List<GuideChannel>, updatedAtMs: Long, sources: List<String>, playlistId: String?): Guide {
+    private fun guideOf(
+        channels: List<GuideChannel>,
+        updatedAtMs: Long,
+        sources: List<String>,
+        playlistId: String?,
+        wantedHashes: IntArray
+    ): Guide {
         val byKey = HashMap<String, List<Programme>>(channels.size * 3)
         for (c in channels) for (key in c.keys) byKey.putIfAbsent(key, c.programmes)
-        return Guide(byKey, updatedAtMs, sources, playlistId, channels.size)
+        return Guide(byKey, updatedAtMs, sources, playlistId, channels.size, wantedHashes)
     }
 
     private fun httpProblem(code: Int): String = when (code) {

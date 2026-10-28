@@ -23,7 +23,8 @@ class NowNext(val now: Programme?, val next: Programme?)
  * tvg-id ([idKey]) and each name the guide gives it ([nameKey]). A playlist entry is looked up by its
  * own tvg-id first, then by its name, since many playlists have no tvg-ids, or ones the guide does not
  * use. [sources] and [playlistId] say what the guide was made for, so that a changed link or another
- * playlist in use loads it again.
+ * playlist in use loads it again. [wantedHashes]: the hash codes of the keys of the playlist channels
+ * it was cut down for, sorted, so that channels the playlist has gained since can be told apart.
  */
 class Guide(
     private val byKey: Map<String, List<Programme>>,
@@ -31,8 +32,16 @@ class Guide(
     val sources: List<String>,
     val playlistId: String?,
     /** How many of the guide's channels are this playlist's. */
-    val channelCount: Int
+    val channelCount: Int,
+    private val wantedHashes: IntArray = IntArray(0)
 ) {
+    /**
+     * Whether the guide was cut down for every channel of [channels]: one the playlist has gained since
+     * was left out of it, and has no programmes in it whatever the guide holds for it.
+     */
+    fun covers(channels: List<Channel>): Boolean =
+        channels.all { c -> keysOf(c).all { wantedHashes.binarySearch(it.hashCode()) >= 0 } }
+
     fun programmesFor(channel: Channel): List<Programme>? =
         channel.tvgId?.let { byKey[idKey(it)] } ?: nameKey(channel.name)?.let { byKey[it] }
 

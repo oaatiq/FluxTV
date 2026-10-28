@@ -240,7 +240,10 @@ background about 20 seconds after the first channel plays, so it never holds up 
 again when it is 12 hours old (it checks every hour), and when the playlist in use or its guide link
 changes. It keeps only what the banner needs, the playlist's channels from 3 hours ago to 36 hours
 ahead, titles only, and saves that, so the banner has it right after a restart. A guide that cannot
-be fetched leaves the last one in place, and it is tried again an hour later.
+be fetched leaves the last one in place, and it is tried again an hour later. When a playlist
+refresh brings channels the guide was not cut down for, the guide is fetched again at the next hourly
+look, so new channels get their programmes too. Titles written with HTML names for letters
+(`M&eacute;t&eacute;o`), as some generated guides have them, show as letters (`Météo`).
 
 A channel is found in the guide by its `tvg-id`, else by its name: `FR: TF1 HD`, `TF1 (backup)` and
 a guide's `TF1` all match, because the country prefix, bracketed notes, words like HD/FHD/4K,
