@@ -165,7 +165,12 @@ implementation.
   links have both arrived (`GUIDE_SETTLE_MS`), so the old playlist's guide is never fetched for the
   new one. Channels a playlist refresh adds are noticed (`Guide.covers`) and the guide fetched again
   at the next hourly look. HTML entities in titles are read as letters (`XmltvParser.cleanTitle`).
-- **Matching** — by tvg-id, else by a normalized name (`Guide.normalizeName`).
+- **Matching** — by tvg-id, else by a normalized name, else by the tvg-name (`Guide.programmesFor`,
+  `Guide.normalizeName`); a short tag set off in front ("FR - ", "|FR| ") is tried without
+  (`Guide.nameKeys`). `tvg-shift` (per channel, or on `#EXTM3U`) moves the guide's times
+  (`M3uParser`, `Channel.guideShiftMin`, `Guide.nowAndNext`).
+- **Progress** — a thin bar under the banner's Now for how much of the programme has gone
+  (`ProgrammeProgress`).
 - **Plain-language status for the administrator** — `GuideStatus` in Settings → Playlists; `[guide]`
   lines in the Diagnostics history, without links (REQ-SEC).
 - **Large clock** — `ClockOverlay` (time, day and date, top right, with the banner) and `ClockText`

@@ -107,7 +107,8 @@ class ChannelRepository(
                 group = shared(it.group),
                 userAgent = shared(it.userAgent),
                 referer = shared(it.referer),
-                tvgId = shared(it.tvgId)
+                tvgId = shared(it.tvgId),
+                tvgName = shared(it.tvgName)
             )
         }
     }
@@ -257,7 +258,9 @@ class ChannelRepository(
                     group = e.group,
                     userAgent = e.userAgent,
                     referer = e.referer,
-                    tvgId = e.tvgId
+                    tvgId = e.tvgId,
+                    tvgName = e.tvgName,
+                    guideShiftMin = e.guideShiftMin ?: 0
                 )
             )
         }

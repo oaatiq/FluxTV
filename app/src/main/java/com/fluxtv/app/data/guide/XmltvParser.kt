@@ -46,7 +46,7 @@ object XmltvParser {
                             val id = parser.getAttributeValue(null, "id")
                             val names = readDisplayNames(parser)
                             if (!id.isNullOrBlank()) {
-                                val keys = (listOf(Guide.idKey(id)) + names.mapNotNull(Guide::nameKey)).distinct()
+                                val keys = (listOf(Guide.idKey(id)) + names.flatMap(Guide::nameKeys)).distinct()
                                 if (keys.any { it in wanted }) kept[id] = keys
                             }
                         }

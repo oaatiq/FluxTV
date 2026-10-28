@@ -17,7 +17,11 @@ data class M3uEntry(
      * cut at their last comma ("Sport 1, HD" came out as "HD"); identities still use the cut form, so
      * the favorites, numbers and last channel stored under them stay where they were.
      */
-    val idName: String? = null
+    val idName: String? = null,
+    /** The entry's tvg-name, when it differs from [name]: another name to find it in the guide by. */
+    val tvgName: String? = null,
+    /** How far the guide's times are off for this entry, in minutes (tvg-shift); null for none. */
+    val guideShiftMin: Int? = null
 )
 
 /**
@@ -38,6 +42,16 @@ object M3uParser {
     private val GUIDE_ATTRIBUTES = setOf("url-tvg", "x-tvg-url", "tvg-url")
 
     /**
+     * A tvg-shift, in hours ("+1", "-2", "1.5"), in minutes; null for none or nonsense. Players move
+     * the guide's times by it: a playlist whose guide is in another time zone says so this way.
+     */
+    private fun shiftMinutes(value: String?): Int? {
+        val hours = value?.trim()?.removePrefix("+")?.replace(',', '.')?.toDoubleOrNull() ?: return null
+        if (hours.isNaN() || hours < -24 || hours > 24) return null
+        return Math.round(hours * 60).toInt().takeIf { it != 0 }
+    }
+
+    /**
      * Reads the playlist one line at a time, straight from the download or file. A provider's list
      * can run to tens of megabytes, and holding it as one string, plus the copies that splitting it
      * into lines makes, could run a TV box out of memory. Lines end at \n, \r or \r\n, as before.
@@ -54,10 +68,14 @@ object M3uParser {
         var tvgChno: Int? = null
         var userAgent: String? = null
         var referer: String? = null
+        var tvgName: String? = null
+        var shift: Int? = null
+        // A tvg-shift on the #EXTM3U line is for every entry that does not have its own.
+        var playlistShift: Int? = null
 
         fun reset() {
             name = null; idName = null; logo = null; group = null; tvgId = null
-            tvgChno = null; userAgent = null; referer = null
+            tvgChno = null; userAgent = null; referer = null; tvgName = null; shift = null
         }
 
         // A group title repeats for every channel of its group, and a logo or tvg-id for every
@@ -78,6 +96,7 @@ object M3uParser {
                 when {
                     line.startsWith("#EXTM3U", ignoreCase = true) -> {
                         for (m in ATTR.findAll(line)) {
+                            if (m.groupValues[1].lowercase() == "tvg-shift") playlistShift = shiftMinutes(m.groupValues[2])
                             if (m.groupValues[1].lowercase() !in GUIDE_ATTRIBUTES) continue
                             for (url in m.groupValues[2].split(',')) {
                                 val clean = url.trim()
@@ -95,7 +114,8 @@ object M3uParser {
                         logo = attrs["tvg-logo"]?.ifBlank { null }
                         group = attrs["group-title"]?.ifBlank { null }
                         tvgChno = attrs["tvg-chno"]?.trim()?.toIntOrNull()
-                        val tvgName = attrs["tvg-name"]?.takeIf { it.isNotBlank() }
+                        tvgName = attrs["tvg-name"]?.trim()?.takeIf { it.isNotBlank() }
+                        shift = shiftMinutes(attrs["tvg-shift"])
                         name = titleAt(line, titleComma(line)) ?: tvgName
                         idName = titleAt(line, line.lastIndexOf(',')) ?: tvgName
                     }
@@ -125,7 +145,9 @@ object M3uParser {
                             M3uEntry(
                                 entryName, url, shared(logo), shared(group), shared(tvgId), tvgChno,
                                 shared(userAgent), shared(referer),
-                                idName = entryIdName.takeIf { it != entryName }
+                                idName = entryIdName.takeIf { it != entryName },
+                                tvgName = shared(tvgName?.takeIf { it != entryName }),
+                                guideShiftMin = shift ?: playlistShift
                             )
                         )
                         reset()

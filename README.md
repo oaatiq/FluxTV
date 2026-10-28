@@ -228,8 +228,8 @@ MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one acti
 
 Each channel change shows a banner at the bottom with the channel's number, logo, name and category.
 When there is a programme guide, the banner also has two lines, **Now** (with when it started and
-when it ends) and **Next** (with when it starts), and stays on a little longer (7 s instead of 4.5 s)
-to be read.
+when it ends, and a thin bar under it for how much of it has gone) and **Next** (with when it
+starts), and stays on a little longer (7 s instead of 4.5 s) to be read.
 A large clock with the day and date shows at the top right together with the banner. The Info or
 Guide key on remotes that have one shows the banner again without changing channel.
 
@@ -245,9 +245,12 @@ refresh brings channels the guide was not cut down for, the guide is fetched aga
 look, so new channels get their programmes too. Titles written with HTML names for letters
 (`M&eacute;t&eacute;o`), as some generated guides have them, show as letters (`Météo`).
 
-A channel is found in the guide by its `tvg-id`, else by its name: `FR: TF1 HD`, `TF1 (backup)` and
-a guide's `TF1` all match, because the country prefix, bracketed notes, words like HD/FHD/4K,
-accents, spaces and punctuation are left out of the comparison. A programme with titles in several
+A channel is found in the guide by its `tvg-id`, else by its name, else by its `tvg-name`:
+`FR: TF1 HD`, `FR - TF1 HD`, `|FR| TF1`, `TF1 (backup)` and a guide's `TF1` all match, because a
+short country tag in front, bracketed notes, words like HD/FHD/4K, accents, spaces and punctuation
+are left out of the comparison. A playlist whose guide is in another time zone can say so with
+`tvg-shift` (in hours, on a channel or on the `#EXTM3U` line for all of them), and the guide's
+times are moved by it. A programme with titles in several
 languages shows the one in the TV's language. **Settings → Playlists → (playlist)** says how many
 channels have Now and Next and when the guide was fetched, or why it could not be; the Diagnostics
 history has a `[guide]` line for each fetch (never the link, which can hold the account details).

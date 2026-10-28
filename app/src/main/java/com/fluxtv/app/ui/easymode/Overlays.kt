@@ -5,9 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -106,7 +109,7 @@ fun ClockText(modifier: Modifier = Modifier) {
 
 /**
  * Bottom channel banner shown briefly on tune-in (REQ-SEN-014: number, logo, name), with what is on
- * now and next when the programme guide has it.
+ * now and next when the programme guide has it, and a thin bar under Now for how much of it has gone.
  */
 @Composable
 fun ChannelInfoBanner(channel: Channel, guide: Guide) {
@@ -132,7 +135,8 @@ fun ChannelInfoBanner(channel: Channel, guide: Guide) {
                 AsyncImage(model = logoUrl, contentDescription = null, modifier = Modifier.size(64.dp))
                 Spacer(Modifier.width(20.dp))
             }
-            Column {
+            // As wide as its widest line, so the progress bar can span the lines above it.
+            Column(Modifier.width(IntrinsicSize.Max)) {
                 BasicText(
                     channel.name,
                     maxLines = 1,
@@ -147,6 +151,8 @@ fun ChannelInfoBanner(channel: Channel, guide: Guide) {
                     nowNext.now?.let {
                         val times = "${timeFormat.format(Date(it.startMs))} – ${timeFormat.format(Date(it.endMs))}"
                         ProgrammeLine("Now", it.title, times, current = true)
+                        val length = (it.endMs - it.startMs).coerceAtLeast(1L)
+                        ProgrammeProgress(((now - it.startMs).toFloat() / length).coerceIn(0f, 1f))
                     }
                     nowNext.next?.let {
                         ProgrammeLine("Next", it.title, "at ${timeFormat.format(Date(it.startMs))}", current = false)
@@ -179,6 +185,21 @@ private fun ProgrammeLine(label: String, title: String, time: String, current: B
         )
         Spacer(Modifier.width(16.dp))
         BasicText(time, maxLines = 1, style = TextStyle(color = FluxMuted, fontSize = 20.sp))
+    }
+}
+
+/** How far into the programme on now: under its title, as a thin line the accent colour fills. */
+@Composable
+private fun ProgrammeProgress(fraction: Float) {
+    Box(
+        Modifier
+            .padding(start = 72.dp * LocalTextScale.current, top = 4.dp, bottom = 6.dp)
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color(0x33FFFFFF))
+    ) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FluxAccent))
     }
 }
 
