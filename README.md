@@ -245,7 +245,9 @@ refresh brings channels the guide was not cut down for, the guide is fetched aga
 look, so new channels get their programmes too. Titles written with HTML names for letters
 (`M&eacute;t&eacute;o`), as some generated guides have them, show as letters (`Météo`).
 
-A channel is found in the guide by its `tvg-id`, else by its name, else by its `tvg-name`:
+A channel is found in the guide by its `tvg-id` (with or without the feed iptv-org guides add:
+`AlAoula.ma` finds `AlAoula.ma@SD`, while an exact id always wins, so `2MMonde.ma` never gets the
+`2MMonde.ma@Plus1` feed's times), else by its name, else by its `tvg-name`:
 `FR: TF1 HD`, `FR - TF1 HD`, `|FR| TF1`, `TF1 (backup)` and a guide's `TF1` all match, because a
 short country tag in front, bracketed notes, words like HD/FHD/4K, accents, spaces and punctuation
 are left out of the comparison. A playlist whose guide is in another time zone can say so with

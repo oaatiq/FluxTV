@@ -46,7 +46,7 @@ object XmltvParser {
                             val id = parser.getAttributeValue(null, "id")
                             val names = readDisplayNames(parser)
                             if (!id.isNullOrBlank()) {
-                                val keys = (listOf(Guide.idKey(id)) + names.flatMap(Guide::nameKeys)).distinct()
+                                val keys = (Guide.idKeys(id) + names.flatMap(Guide::nameKeys)).distinct()
                                 if (keys.any { it in wanted }) kept[id] = keys
                             }
                         }
@@ -54,7 +54,10 @@ object XmltvParser {
                             val id = parser.getAttributeValue(null, "channel")
                             // A guide that lists its programmes before (or without) its channels can
                             // still be matched on the id.
-                            if (id != null && id !in kept && Guide.idKey(id) in wanted) kept[id] = listOf(Guide.idKey(id))
+                            if (id != null && id !in kept) {
+                                val keys = Guide.idKeys(id)
+                                if (keys.any { it in wanted }) kept[id] = keys
+                            }
                             if (id == null || id !in kept || total >= MAX_PROGRAMMES) {
                                 skip(parser)
                             } else {

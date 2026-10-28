@@ -22,7 +22,7 @@ class NowNext(val now: Programme?, val next: Programme?)
  * The programme guide of the playlist in use, cut down to its channels and to the hours around now.
  *
  * Each channel's programmes are sorted by start and filed under every key it can be found by: its
- * tvg-id ([idKey]) and each name the guide gives it ([nameKeys]). A playlist entry is looked up by its
+ * tvg-id ([idKeys]) and each name the guide gives it ([nameKeys]). A playlist entry is looked up by its
  * own tvg-id first, then by its name and tvg-name, since many playlists have no tvg-ids, or ones the
  * guide does not use. [sources] and [playlistId] say what the guide was made for, so that a changed link or another
  * playlist in use loads it again. [wantedHashes]: the hash codes of the keys of the playlist channels
@@ -45,7 +45,7 @@ class Guide(
         channels.all { c -> keysOf(c).all { wantedHashes.binarySearch(it.hashCode()) >= 0 } }
 
     fun programmesFor(channel: Channel): List<Programme>? {
-        channel.tvgId?.let { byKey[idKey(it)] }?.let { return it }
+        for (key in idKeysOf(channel)) byKey[key]?.let { return it }
         for (key in nameKeysOf(channel)) byKey[key]?.let { return it }
         return null
     }
@@ -79,7 +79,21 @@ class Guide(
     companion object {
         val EMPTY = Guide(emptyMap(), 0L, emptyList(), null, 0)
 
-        fun idKey(tvgId: String): String = "i:" + tvgId.trim().lowercase()
+        /**
+         * The keys of a tvg-id: the id itself, then the channel it names without its feed.
+         * iptv-org ids end in the feed ("AlAoula.ma@SD", "2MMonde.ma@Plus1") and playlists often
+         * leave it off, or name another one. The exact id is a key of its own, and comes first,
+         * so "2MMonde.ma" finds 2M Monde and never its feed an hour late, while "AlAoula.ma"
+         * still finds a guide's "AlAoula.ma@SD".
+         */
+        fun idKeys(tvgId: String): List<String> {
+            val id = tvgId.trim().lowercase()
+            if (id.isEmpty()) return emptyList()
+            val channel = id.substringBefore('@').trim()
+            return if (channel.isEmpty()) listOf("i:$id") else listOf("i:$id", "b:$channel")
+        }
+
+        private fun idKeysOf(channel: Channel): List<String> = channel.tvgId?.let(::idKeys).orEmpty()
 
         /**
          * The keys of a channel name: the whole name, then the name without a tag in front of it
@@ -105,8 +119,7 @@ class Guide(
         }
 
         /** The keys a playlist channel can be found under, for the guide to keep its programmes. */
-        fun keysOf(channel: Channel): List<String> =
-            listOfNotNull(channel.tvgId?.takeIf { it.isNotBlank() }?.let(::idKey)) + nameKeysOf(channel)
+        fun keysOf(channel: Channel): List<String> = idKeysOf(channel) + nameKeysOf(channel)
 
         /** Words that only say which version of a channel this is, and that guides leave out. */
         private val VERSION_WORDS = setOf(
