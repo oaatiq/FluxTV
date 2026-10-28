@@ -885,6 +885,10 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setEvenVolume(value) }
     }
 
+    fun setProgrammeInList(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setProgrammeInList(value) }
+    }
+
     /** A programme guide link for a saved playlist; blank goes back to the ones the playlist names. */
     fun setGuideUrl(id: String, url: String) {
         viewModelScope.launch { container.settingsRepository.setGuideUrl(id, url) }

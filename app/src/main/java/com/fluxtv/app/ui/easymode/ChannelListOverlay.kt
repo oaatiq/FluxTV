@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.ui.BROWSE_ALL
 import com.fluxtv.app.ui.BROWSE_FAVORITES
@@ -94,6 +95,9 @@ private const val PREVIEW_DELAY_MS = 140L
  * channels once the focus rests there, and OK or ▶ goes into the channels. Favorites and All channels are
  * the first two categories. The time is at the top right. With larger text (Preferences → Text size)
  * the panel and its columns grow with it, so names keep as much of their length as they can.
+ *
+ * [guide]: when given, each channel that has it shows what is on now after its name (EPG-06); null
+ * when Preferences turns that off. Only the rows on screen look it up, once a minute.
  */
 @Composable
 fun ChannelListOverlay(
@@ -105,7 +109,8 @@ fun ChannelListOverlay(
     pane: BrowsePane,
     onPaneChange: (BrowsePane) -> Unit,
     onSelect: (Channel) -> Unit,
-    onToggleFavorite: (Channel) -> Unit
+    onToggleFavorite: (Channel) -> Unit,
+    guide: Guide? = null
 ) {
     // byGroup: the real categories in first-appearance order, grouped by the view model when the
     // playlist changes rather than here, on the main thread, every time the list opens.
@@ -160,6 +165,9 @@ fun ChannelListOverlay(
         shownKey = key
         onPaneChange(BrowsePane.CHANNELS)
     }
+
+    // Only ticks while there is a guide to read: without one the list never recomposes for the time.
+    val now = if (guide != null && guide.channelCount > 0) rememberMinuteClock() else 0L
 
     val textScale = LocalTextScale.current
     val panelWidth = 700.dp + 320.dp * (textScale - 1f)
@@ -232,6 +240,9 @@ fun ChannelListOverlay(
                 } else {
                     LazyColumn(state = channelState, modifier = Modifier.weight(1f).fillMaxHeight()) {
                         itemsIndexed(channels, key = { _, channel -> channel.stableId }) { _, channel ->
+                            val programme = remember(guide, channel, now) {
+                                if (now == 0L) null else guide?.nowAndNext(channel, now)?.now?.title
+                            }
                             ChannelRow(
                                 number = channel.number,
                                 name = channel.name,
@@ -241,7 +252,8 @@ fun ChannelListOverlay(
                                 modifier = if (channel.stableId == focusChannelId) Modifier.focusRequester(channelFocus) else Modifier,
                                 onClick = { onSelect(channel) },
                                 onLongClick = { onToggleFavorite(channel) },
-                                numberWidth = 58.dp * textScale
+                                numberWidth = 58.dp * textScale,
+                                programme = programme
                             )
                         }
                     }

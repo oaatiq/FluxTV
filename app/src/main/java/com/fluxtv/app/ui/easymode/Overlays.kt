@@ -145,7 +145,8 @@ fun ChannelInfoBanner(channel: Channel, guide: Guide) {
                 if (nowNext != null) {
                     Spacer(Modifier.height(10.dp))
                     nowNext.now?.let {
-                        ProgrammeLine("Now", it.title, "until ${timeFormat.format(Date(it.endMs))}", current = true)
+                        val times = "${timeFormat.format(Date(it.startMs))} – ${timeFormat.format(Date(it.endMs))}"
+                        ProgrammeLine("Now", it.title, times, current = true)
                     }
                     nowNext.next?.let {
                         ProgrammeLine("Next", it.title, "at ${timeFormat.format(Date(it.startMs))}", current = false)
@@ -156,7 +157,7 @@ fun ChannelInfoBanner(channel: Channel, guide: Guide) {
     }
 }
 
-/** "Now  News at Eight  until 20:30": the titles line up under each other, the time follows. */
+/** "Now  News at Eight  20:00 – 20:30": the titles line up under each other, the times follow. */
 @Composable
 private fun ProgrammeLine(label: String, title: String, time: String, current: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {

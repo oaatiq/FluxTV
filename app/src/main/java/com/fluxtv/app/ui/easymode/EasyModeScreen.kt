@@ -79,7 +79,8 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
                     pane = state.browsePane,
                     onPaneChange = vm::setBrowsePane,
                     onSelect = vm::selectChannel,
-                    onToggleFavorite = vm::toggleFavorite
+                    onToggleFavorite = vm::toggleFavorite,
+                    guide = guide.takeIf { state.settings.programmeInList }
                 )
             }
         }

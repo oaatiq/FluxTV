@@ -149,6 +149,10 @@ implementation.
   `ProgrammeLine`) from `data/guide/Guide.kt` (`Guide.nowAndNext`). Two lines only, no guide grid
   (§26). The banner stays 7 s when it has them (`AppViewModel.showBanner`); the Info / Guide key
   (`MainActivity`, `toggleChannelInfo`) and choosing the channel already playing show it again.
+- **Now in the channel list** — `ChannelListOverlay` gives each row on screen its current programme
+  (`Guide.nowAndNext`, looked up once a minute); `ChannelRow` writes it smaller and grey after the
+  name on the same line, so rows keep their height and the name is never cut short for it. Settings →
+  Preferences → *Show what is on in the channel list* (`FluxSettings.programmeInList`, on by default).
 - **Guide source** — the playlist's `url-tvg` / `x-tvg-url` (`M3uParser`, kept in
   `ChannelRepository.guideUrls` and the playlist cache), or `SavedPlaylist.guideUrl` set in Settings →
   Playlists → *Programme guide*, which comes first.
@@ -173,6 +177,26 @@ implementation.
   limited under −1 dBFS; switching takes effect at once. Diagnostics shows its gain.
 - **Acceptance tests** — README → Acceptance testing → *Banner, guide and clock*, *Text size*,
   *Even volume*.
+
+### EPG / programme information (EPG-01 … EPG-11)
+- **EPG-01/02** — optional XMLTV guide named by the playlist (`url-tvg` / `x-tvg-url`), matched to
+  channels by tvg-id, else by normalized name (`Guide`, `GuideRepository`).
+- **EPG-03** — Settings → Playlists → (playlist) → *Programme guide*: a link of the administrator's
+  own, which comes first.
+- **EPG-04/05** — the banner's *Now* (title, start – end) and *Next* (title, start)
+  (`ChannelInfoBanner`).
+- **EPG-06** — the current programme after each name in the channel list, secondary and on the same
+  line (`ChannelRow`); can be turned off in Preferences.
+- **EPG-07** — no guide grid and no new screen or navigation in Easy Mode; the Info / Guide key only
+  shows the banner again.
+- **EPG-08** — playback never waits on the guide: it is read from its own cache file, fetched 20 s
+  after the first channel plays, and a channel without guide data shows exactly what it did before.
+- **EPG-09** — refreshed in the background every 12 h (checked hourly), and when the playlist or link
+  changes; a failed fetch keeps the last guide.
+- **EPG-10** — fetched and parsed at background thread priority, cut down to the playlist's channels
+  and 39 hours; lookups are a binary search for the rows on screen only.
+- **EPG-11** — the guide link, its status and the channel-list setting are all in Settings
+  (Administrator Mode); Easy Mode only shows programmes.
 
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream

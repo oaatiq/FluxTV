@@ -66,6 +66,7 @@ private object Keys {
     val USER_AGENT = stringPreferencesKey("user_agent")
     val TEXT_SIZE = intPreferencesKey("text_size_percent")
     val EVEN_VOLUME = booleanPreferencesKey("even_volume")
+    val PROGRAMME_IN_LIST = booleanPreferencesKey("programme_in_list")
 }
 
 /** Where versions before multiple playlists kept their one playlist; read once by [SinglePlaylistMigration]. */
@@ -160,7 +161,9 @@ data class FluxSettings(
     /** How large TV's text is, in percent of the normal size: one of [TEXT_SIZES]. */
     val textSizePercent: Int = TEXT_SIZE_NORMAL,
     /** Whether quiet channels are brought up and loud ones down to one volume. */
-    val evenVolume: Boolean = true
+    val evenVolume: Boolean = true,
+    /** Whether the channel list shows what is on now beside each name, when the guide has it. */
+    val programmeInList: Boolean = true
 ) {
     /** The User-Agent for the playlists and for channels whose playlist entry names none. */
     val effectiveUserAgent: String get() = headerValue(userAgent).ifBlank { DEFAULT_USER_AGENT }
@@ -192,7 +195,8 @@ class SettingsRepository(private val context: Context) {
             startOnBoot = p[Keys.START_ON_BOOT] ?: true,
             userAgent = p[Keys.USER_AGENT] ?: "",
             textSizePercent = p[Keys.TEXT_SIZE]?.takeIf { it in TEXT_SIZES } ?: TEXT_SIZE_NORMAL,
-            evenVolume = p[Keys.EVEN_VOLUME] ?: true
+            evenVolume = p[Keys.EVEN_VOLUME] ?: true,
+            programmeInList = p[Keys.PROGRAMME_IN_LIST] ?: true
         )
     }
 
@@ -281,5 +285,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setEvenVolume(value: Boolean) {
         context.dataStore.edit { it[Keys.EVEN_VOLUME] = value }
+    }
+
+    suspend fun setProgrammeInList(value: Boolean) {
+        context.dataStore.edit { it[Keys.PROGRAMME_IN_LIST] = value }
     }
 }

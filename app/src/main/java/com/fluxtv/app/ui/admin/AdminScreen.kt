@@ -664,6 +664,16 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         )
 
         FluxToggleRow(
+            "Show what is on in the channel list",
+            state.settings.programmeInList,
+            Modifier.fillMaxWidth(0.7f)
+        ) { vm.setProgrammeInList(it) }
+        BasicText(
+            "The programme on now, in smaller grey letters after each channel name, when the programme guide has it.",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
+
+        FluxToggleRow(
             "Even out the volume between channels",
             state.settings.evenVolume,
             Modifier.fillMaxWidth(0.7f)

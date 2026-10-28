@@ -227,8 +227,9 @@ MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one acti
 ## Banner, programme guide and clock
 
 Each channel change shows a banner at the bottom with the channel's number, logo, name and category.
-When there is a programme guide, the banner also has two lines, **Now** (with when it ends) and
-**Next** (with when it starts), and stays on a little longer (7 s instead of 4.5 s) to be read.
+When there is a programme guide, the banner also has two lines, **Now** (with when it started and
+when it ends) and **Next** (with when it starts), and stays on a little longer (7 s instead of 4.5 s)
+to be read.
 A large clock with the day and date shows at the top right together with the banner. The Info or
 Guide key on remotes that have one shows the banner again without changing channel.
 
@@ -248,8 +249,14 @@ languages shows the one in the TV's language. **Settings → Playlists → (play
 channels have Now and Next and when the guide was fetched, or why it could not be; the Diagnostics
 history has a `[guide]` line for each fetch (never the link, which can hold the account details).
 
+The channel list shows what is on now after each channel name, in smaller grey letters on the same
+line, so rows keep their height and a long title is cut short before the name is. Channels the guide
+does not have show their name alone, as before. **Settings → Preferences → Show what is on in the
+channel list** turns this off.
+
 This is deliberately not a guide grid (see Non-goals): the Viewer gets what is on, without a new
-screen to learn.
+screen to learn. A missing, old or unreachable guide never holds up or stops a channel: the banner
+and the list simply leave the programme out.
 
 ## Text size
 
@@ -353,7 +360,9 @@ channels in the current category (Back); and keep watching after a brief network
 **Banner, guide and clock.** With a playlist that names a guide (or a guide link set for it), change
 channel about a minute after FluxTV starts: the banner shows Now and Next with their times, and the
 clock and date show at the top right. Press Info (or choose the channel already playing in the list)
-to see the banner again. **Settings → Playlists → (playlist)** says how many channels have Now and
+to see the banner again. Open the channel list: channels in the guide show their current programme
+after the name; the others show the name alone. With the guide link set to an address that does
+not answer, channels change as quickly as without a guide. **Settings → Playlists → (playlist)** says how many channels have Now and
 Next.
 
 **Text size.** Switch **Text size on TV** to Extra large, go back to TV, and open the channel list:

@@ -32,10 +32,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -203,6 +206,11 @@ fun FluxChip(
     }
 }
 
+/**
+ * One channel in the channel list. [programme]: what is on now, from the programme guide, written
+ * smaller and greyer after the name on the same line, so the row keeps its height and the name comes
+ * first: when the line is too long, the programme is what gets cut short.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChannelRow(
@@ -214,10 +222,22 @@ fun ChannelRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
-    numberWidth: Dp = 64.dp
+    numberWidth: Dp = 64.dp,
+    programme: String? = null
 ) {
     var focused by remember { mutableStateOf(false) }
     val textColor = if (focused) OnAccent else FluxOnSurface
+    val label = remember(name, programme, focused) {
+        buildAnnotatedString {
+            append(name)
+            if (!programme.isNullOrBlank()) {
+                withStyle(SpanStyle(color = if (focused) OnAccent.copy(alpha = 0.7f) else FluxMuted, fontSize = 18.sp)) {
+                    append("   ")
+                    append(programme)
+                }
+            }
+        }
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -248,7 +268,7 @@ fun ChannelRow(
             Spacer(Modifier.width(12.dp))
         }
         BasicText(
-            name,
+            label,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
