@@ -50,6 +50,7 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 import com.fluxtv.app.ui.theme.FluxSurface
 import com.fluxtv.app.ui.theme.FluxSurfaceVariant
 import com.fluxtv.app.ui.theme.FluxWarning
+import com.fluxtv.app.ui.theme.LocalTextScale
 
 private val OnAccent = Color(0xFF00131C)
 
@@ -209,7 +210,8 @@ fun FluxChip(
 /**
  * One channel in the channel list. [programme]: what is on now, from the programme guide, written
  * smaller and greyer after the name on the same line, so the row keeps its height and the name comes
- * first: when the line is too long, the programme is what gets cut short.
+ * first: when the line is too long, the programme is what gets cut short. [isCurrent]: the channel
+ * playing, marked with ▶ before its number, where it takes none of the name's or programme's width.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -251,9 +253,20 @@ fun ChannelRow(
                     else -> Color.Transparent
                 }
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 4.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Every row keeps the slot, so the numbers line up. U+FE0E: the plain sign, never an emoji.
+        Box(Modifier.width(16.dp * LocalTextScale.current), contentAlignment = Alignment.CenterStart) {
+            if (isCurrent) {
+                BasicText(
+                    "\u25B6\uFE0E",
+                    maxLines = 1,
+                    softWrap = false,
+                    style = TextStyle(color = if (focused) OnAccent else FluxAccent, fontSize = 14.sp)
+                )
+            }
+        }
         BasicText(
             number.toString(),
             modifier = Modifier.width(numberWidth),
@@ -277,13 +290,6 @@ fun ChannelRow(
         if (isFavorite) {
             Spacer(Modifier.width(12.dp))
             BasicText("★", style = TextStyle(color = if (focused) OnAccent else FluxWarning, fontSize = 22.sp))
-        }
-        if (isCurrent) {
-            Spacer(Modifier.width(12.dp))
-            BasicText(
-                "NOW",
-                style = TextStyle(color = if (focused) OnAccent else FluxAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            )
         }
     }
 }
