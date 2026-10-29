@@ -616,11 +616,30 @@ class FluxPlayerController(
     /**
      * Heuristic classification of a MediaCodec decoder name. Android software video decoders are
      * named "OMX.google.*" (legacy) or "c2.android.*" (Codec2); everything else is a
-     * vendor/hardware decoder (e.g. "c2.amlogic.*", "OMX.amlogic.*" on TV boxes). (REQ-HW-006)
+     * vendor/hardware decoder (e.g. "c2.amlogic.*", "OMX.amlogic.*" on TV boxes). FFmpeg decoders
+     * are software even where the ROM lists them as hardware-accelerated ("c2.ffmpeg.*" on the
+     * Raspberry Pi 5 does, for H.264 too, which that board has no hardware for); the exception is
+     * HEVC there, which the FFmpeg component hands to the board's V4L2 HEVC block. (REQ-HW-006)
      */
     private fun isSoftwareDecoderName(name: String): Boolean {
         val n = name.lowercase()
-        return n.startsWith("omx.google.") || n.startsWith("c2.android.") || n.startsWith("omx.ffmpeg.")
+        return n.startsWith("omx.google.") || n.startsWith("c2.android.") || n.startsWith("omx.ffmpeg.") ||
+            (n.startsWith("c2.ffmpeg.") && !n.startsWith("c2.ffmpeg.hevc."))
+    }
+
+    /** The codec a decoder name is for, or null when the name does not say, to tell a fallback from a zap. */
+    private fun decoderCodec(name: String): String? {
+        val n = name.lowercase()
+        return when {
+            "avc" in n || "h264" in n -> "avc"
+            "hevc" in n || "h265" in n -> "hevc"
+            "mpeg2" in n -> "mpeg2"
+            "mpeg4" in n -> "mpeg4"
+            "vp8" in n -> "vp8"
+            "vp9" in n -> "vp9"
+            "av1" in n || "av01" in n -> "av1"
+            else -> null
+        }
     }
 
     private val playerListener = object : Player.Listener {
@@ -759,7 +778,10 @@ class FluxPlayerController(
                 hardwareDecoding = hardware
             )
             // Record decoder selection, and flag a hardware -> software fallback explicitly (REQ-HW-006).
-            if (previous != null && previous != decoderName && !isSoftwareDecoderName(previous) && !hardware) {
+            // A channel in another codec that only has a software decoder is not a fallback.
+            if (previous != null && previous != decoderName && !isSoftwareDecoderName(previous) && !hardware &&
+                decoderCodec(previous) == decoderCodec(decoderName)
+            ) {
                 logEvent("decoder", "Fell back to software decoder: $decoderName")
             } else {
                 logEvent("decoder", "Video decoder: $decoderName (${if (hardware) "hardware" else "software"})")
