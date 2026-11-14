@@ -12,3 +12,5 @@ local.properties
 *.aab
 /app/build/
 /app/release/
+# Kotlin 2.x build sessions and compiler logs
+.kotlin/
