@@ -51,8 +51,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 enum class AppMode { STARTING, EASY, ADMIN }
 enum class EasyOverlay { NONE, CHANNEL_LIST, NUMBER_ENTRY }
-/** Which column of the two-pane channel list has the D-pad focus. */
-enum class BrowsePane { CATEGORIES, CHANNELS }
+/**
+ * Which column of the channel list has the D-pad focus: the channels, their categories, or the
+ * Settings button at the far left (◀ from the categories).
+ */
+enum class BrowsePane { SETTINGS, CATEGORIES, CHANNELS }
 
 /** Keys of the two built-in entries at the top of the category column; real categories use their own name. */
 const val BROWSE_FAVORITES = "\u0000favorites"

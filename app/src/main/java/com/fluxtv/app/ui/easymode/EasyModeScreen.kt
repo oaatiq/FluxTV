@@ -1,19 +1,29 @@
 package com.fluxtv.app.ui.easymode
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +35,8 @@ import com.fluxtv.app.ui.BrowsePane
 import com.fluxtv.app.ui.EasyOverlay
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.overscan
+import com.fluxtv.app.ui.theme.FluxAccent
+import com.fluxtv.app.ui.theme.FluxFocus
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
 
@@ -80,6 +92,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
                     onPaneChange = vm::setBrowsePane,
                     onSelect = vm::selectChannel,
                     onToggleFavorite = vm::toggleFavorite,
+                    onOpenSettings = vm::requestAdmin,
                     guide = guide.takeIf { state.settings.programmeInList }
                 )
             }
@@ -94,7 +107,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
 
     BackHandler(enabled = true) {
         when {
-            // The channels step up to the categories; the categories leave the app.
+            // The channels step up to the categories; the categories (and Settings beside them) leave the app.
             state.overlay == EasyOverlay.CHANNEL_LIST && state.browsePane == BrowsePane.CHANNELS ->
                 vm.setBrowsePane(BrowsePane.CATEGORIES)
             state.overlay == EasyOverlay.CHANNEL_LIST -> onExit()
@@ -107,6 +120,10 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
 /**
  * [loading]: a first playlist download is still running (it can take minutes over a slow line).
  * [failed]: a playlist is set but could not be loaded, and FluxTV is trying again.
+ *
+ * With no channels there is no list to open, so OK opens Settings here (`MainActivity`), and the
+ * button says so. That is the way in for a remote with no MENU key and no long press of OK, such as
+ * a TV's own remote through HDMI-CEC.
  */
 @Composable
 private fun NoChannelsHint(loading: Boolean, failed: Boolean) {
@@ -115,10 +132,8 @@ private fun NoChannelsHint(loading: Boolean, failed: Boolean) {
             "The first time can take a few minutes. TV starts on its own when they arrive."
         failed -> "Can't load the channels" to
             "FluxTV keeps trying, and TV starts on its own when they arrive.\n" +
-            "If this lasts, check the internet connection and the playlist address in Settings:\n" +
-            "press the MENU button, or press and hold OK."
-        else -> "No channels yet" to
-            "Open Settings to add your playlist.\nPress the MENU button, or press and hold OK."
+            "If this lasts, check the internet connection and the playlist in Settings."
+        else -> "No channels yet" to "Open Settings to add your playlist."
     }
     Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -132,6 +147,39 @@ private fun NoChannelsHint(loading: Boolean, failed: Boolean) {
                 modifier = Modifier.padding(horizontal = 24.dp),
                 style = TextStyle(color = FluxMuted, fontSize = 22.sp, textAlign = TextAlign.Center)
             )
+            Spacer(Modifier.height(36.dp))
+            OpenSettingsPrompt()
         }
     }
 }
+
+/**
+ * "Open Settings", drawn as the focused button OK presses. It takes no focus of its own: the remote's
+ * OK reaches Settings through the central key handler whatever is focused, so it cannot be missed.
+ */
+@Composable
+private fun OpenSettingsPrompt() {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(FluxAccent)
+            .border(3.dp, FluxFocus, shape)
+            .padding(horizontal = 28.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Image(
+            Icons.Filled.Settings,
+            contentDescription = null,
+            modifier = Modifier.size(26.dp),
+            colorFilter = ColorFilter.tint(OnAccent)
+        )
+        Spacer(Modifier.width(12.dp))
+        BasicText(
+            "Open Settings",
+            style = TextStyle(color = OnAccent, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        )
+    }
+}
+
+private val OnAccent = Color(0xFF00131C)

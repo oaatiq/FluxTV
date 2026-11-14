@@ -87,7 +87,8 @@ private enum class AdminSection {
 
 /**
  * Administrator area, fully separated from Easy Mode (REQ-GEN-003, REQ-CFG-003) and optionally
- * protected by a PIN (REQ-CFG-004). Reached only by a deliberate gesture (hold OK / MENU). It also
+ * protected by a PIN (REQ-CFG-004). Reached only by a deliberate step (⚙ at the left of the channel
+ * list, hold OK, MENU; OK while there are no channels; the ⚙ button on a phone). It also
  * holds "Exit FluxTV" (Back from the Categories view and Home also leave the app).
  *
  * Playlists are managed here and only here: Easy Mode never names a playlist or offers a choice of

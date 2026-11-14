@@ -8,7 +8,8 @@ sections) is met in this implementation.
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
   change channel, channel list, favorites, current-category list (Back).
-- **REQ-GEN-003** — admin is a separate `AppMode.ADMIN` reached only by a deliberate gesture;
+- **REQ-GEN-003** — admin is a separate `AppMode.ADMIN` reached only by a deliberate step (⚙ at the
+  left of the channel list, hold OK, MENU);
   `ui/admin/AdminScreen.kt`.
 - **REQ-GEN-004** — no home page; `FluxApp` boots straight into `STARTING → EASY`.
 - **REQ-GEN-005** — all operation via remote; `MainActivity.handleRemoteKey`.
@@ -52,6 +53,11 @@ sections) is met in this implementation.
   (`MainActivity.handleRemoteKey`).
 - **REQ-REM-003** — `event.repeatCount == 0` gating ⇒ one action per press; no unstable repeats.
 - **REQ-REM-004** — works with D-pad/OK/Back/Home/volume only; volume & Home never intercepted.
+  Settings too: ◀ from the categories reaches ⚙ Settings (`ChannelListOverlay`, `BrowsePane.SETTINGS`),
+  and with no channels OK opens it (`MainActivity`, the *Open Settings* button of `NoChannelsHint`),
+  for remotes that send no MENU key and no long press: a TV's own remote through HDMI-CEC (LG,
+  Samsung and others keep MENU for the TV, and a hold can arrive as several short presses). A held ◀
+  stops at the categories; ▲ ▼ stay on ⚙.
 - **REQ-REM-005** — number keys tune directly (`NumberEntryOverlay`, `AppViewModel.onDigit`); the
   remote's last-channel key, where there is one, goes back to the previous channel.
 - **REQ-REM-006** — ▲/▼ change channel without opening the list.
@@ -109,9 +115,10 @@ sections) is met in this implementation.
 - **Replacing a playlist takes an explicit administrator action** — a playlist added while another
   is in use is only saved; *Use this playlist* is the switch.
 - **Only during an administrator-authorized setup session** — the page answers only while the QR
-  screen is open in Settings (behind hold OK / MENU and the optional PIN), for 15 minutes at most,
-  and not once FluxTV leaves the screen (`AppViewModel.startPhoneSetup`, `endPhoneSetup`). Every
-  address carries a random code that only the QR code holds; a new session gets a new one.
+  screen is open in Settings (behind ⚙ in the channel list, hold OK or MENU, and the optional
+  PIN), for 15 minutes at most, and not once FluxTV leaves the screen (`AppViewModel.startPhoneSetup`,
+  `endPhoneSetup`). Every address carries a random code that only the QR code holds; a new session
+  gets a new one.
 - **Playlist links never shown in Easy Mode** — they appear only in Settings; the diagnostics history
   records playlist names, never links.
 - **No phone needed afterwards** — the playlist is saved on the TV and refreshed by the TV.
@@ -307,7 +314,8 @@ sections) is met in this implementation.
 - **REQ-DIA-001..004** — admin-only Diagnostics screen + persisted `DiagnosticsStore` history, kept in
   memory and saved one appended line per event (the file is compacted at twice its 300-event cap).
   A crash leaves a note (`CrashNotes`) that the next start adds to the history.
-- **REQ-CFG-001..005** — admin behind hold-OK/MENU and optional PIN; no config needed for daily use.
+- **REQ-CFG-001..005** — admin behind ⚙ in the channel list / hold-OK / MENU and optional PIN; no
+  config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
 - **REQ-SEC-001..005** — credentials never shown to the Viewer, nor written to the diagnostics
   history; the phone setup page answers only during a setup session and only under its random code;

@@ -98,7 +98,7 @@ apps.
 If the playlist cannot be loaded and none was saved before (the TV started before its network was
 up, or the provider is down), TV shows *Can't load the channels* and FluxTV keeps trying: as soon as
 the network is back, and otherwise at growing intervals up to every 15 minutes. TV starts on its own
-when the channels arrive.
+when the channels arrive. Meanwhile OK opens Settings, to check the playlist.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. An
@@ -209,12 +209,12 @@ couple of seconds a normal channel change takes, with the channel banner while i
 |---|---|---|
 | **▲ / Channel +** | Next channel | — |
 | **▼ / Channel −** | Previous channel | — |
-| **◀ ▶** | — | **◀** moves from the channels to the categories, **▶** goes back into the channels |
+| **◀ ▶** | — | **◀** moves from the channels to the categories, and from the categories to **⚙ Settings**; **▶** goes back |
 | **▲ ▼** | — | Move through the channels, or through the categories (the channels on the right follow) |
-| **OK** | Open the channel list | Watch the highlighted channel; on a category, open its channels |
+| **OK** | Open the channel list (with no channels yet: open **Settings**) | Watch the highlighted channel; on a category, open its channels; on ⚙, open **Settings** |
 | **Hold OK (2s)** | Open **Settings** | — |
 | **OK (long-press on a row)** | — | Add/remove favorite ★ |
-| **Back** | Show the channel list (the current channel's category, e.g. Maroc) | Step up: channels → categories → leave FluxTV |
+| **Back** | Show the channel list (the current channel's category, e.g. Maroc) | Step up: channels → categories (or ⚙) → leave FluxTV |
 | **0–9** | Go directly to a channel number | Go directly to a channel number |
 | **Last channel** (on remotes that have it) | Back to the channel watched before; again to return | Same |
 | **Info / Guide** (on remotes that have it) | Show the channel banner with what is on now and next; again to hide it | — |
@@ -224,13 +224,22 @@ couple of seconds a normal channel change takes, with the channel banner while i
 The channel list has two columns: **categories** on the left (Favorites and All channels first, then the
 playlist's own groups with their channel counts) and the **channels** of the highlighted category on the
 right. It opens on the category of the channel you are watching, with that channel selected. The time is at
-the top right of the list.
+the top right of the list. At the far left of the list is **⚙ Settings**: from the categories, press
+**◀** once more.
+
+**Settings with any remote.** Hold OK and MENU open Settings, but a TV's own remote often sends
+neither: when an Android TV box is worked with the TV's remote through HDMI-CEC (an LG or Samsung
+remote, among others), the TV keeps the MENU or ⚙ key for its own menu, and holding a key can reach
+FluxTV as several short presses. **OK, ◀, ◀, OK** — open the list, go to the categories, then to ⚙ —
+uses only the arrows and OK, which every remote sends, and takes the same four presses from any
+category. While there are no channels to list (*Loading channels…*, *Can't load the channels*, *No
+channels yet*), the screen shows **Open Settings** and OK opens it.
 
 Back steps back like other IPTV players: watching → the channel list → the categories column → leave
 FluxTV. The last channel (one watched for a few seconds) is remembered, so the next launch resumes
 it. Choosing the channel that is already playing just closes the list, plays it on if something
-had paused it, and shows its banner, so it is also a way to see what is on. **Home** also leaves (the app stays in the background), and **Settings** (hold OK, or
-MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
+had paused it, and shows its banner, so it is also a way to see what is on. **Home** also leaves (the app stays in the background), and **Settings** (⚙ in the
+channel list, hold OK, or MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
 
 ## On a phone or tablet
 
@@ -347,8 +356,10 @@ or says that it is off or not possible for this sound.
 
 ## Administrator / Settings
 
-Reached only by a deliberate gesture (**hold OK** or the **MENU** button), so ordinary navigation
-can never expose destructive actions. Optionally protect it with a **PIN** (Preferences). Sections:
+Reached only by a deliberate step — **⚙ Settings** at the far left of the channel list (OK, ◀, ◀, OK),
+**hold OK**, or the **MENU** button — so watching and changing channels never lead into it by
+themselves; the ⚙ works with every remote (see [Settings with any remote](#remote-control)).
+Optionally protect it with a **PIN** (Preferences). Sections:
 
 - **Playlists** — add playlists (from a phone, or typed), see the saved ones with the one in use
   marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link,
@@ -440,6 +451,13 @@ quiet one and a negative gain on the loud one.
 **Multiple playlists.** Save two playlists, put the second in use in **Settings → Playlists**, then
 restart FluxTV (or the TV). TV comes back on the second playlist's channels, on its last channel,
 with no playlist prompt or choice anywhere outside Settings.
+
+**Settings with any remote.** With a remote that has no MENU key (or the TV's own remote through
+HDMI-CEC), press OK, ◀, ◀: the hint under the list reads *OK: open Settings* and ⚙ is highlighted; OK
+opens Settings (the PIN first, if one is set), and **Back to TV** returns to the channel. From ⚙, ▶
+goes back to the categories, and ▲ ▼ stay on ⚙. Holding ◀ in the channels stops at the categories.
+Then point the playlist at a link that does not load and restart FluxTV: *Can't load the channels*
+shows **Open Settings**, and OK opens it.
 
 **Hardware decoding (REQ-HW-007).** For each reference stream, confirm in **Settings → Diagnostics**
 that *Decoding* reads **Hardware (…)**, not merely that hardware was available. Any hardware→software

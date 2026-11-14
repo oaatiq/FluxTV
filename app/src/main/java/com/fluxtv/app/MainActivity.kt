@@ -35,7 +35,10 @@ import kotlinx.coroutines.launch
  * Single activity. It hosts Compose and owns the central remote-control handler so that each
  * physical button maps to one consistent action regardless of what is focused (§7, REQ-REM-001).
  * Volume and Home are never intercepted; a long-press of OK (or the MENU button) is the deliberate,
- * non-obvious gesture into the administrator area (REQ-CFG-001).
+ * non-obvious gesture into the administrator area (REQ-CFG-001). A TV's own remote through HDMI-CEC
+ * often sends neither (the TV keeps MENU for itself, and a hold can arrive as several short presses),
+ * so Settings is also reached with the arrows and OK alone: ⚙ at the left of the channel list, and
+ * OK on the screen shown while there are no channels.
  *
  * On a phone or tablet, Easy Mode is worked by touch instead: the screen turns with the phone (and
  * goes sideways with the full-screen button), the status bar shows while it is upright, and the
@@ -317,6 +320,9 @@ class MainActivity : ComponentActivity() {
                             when {
                                 held >= 2000L -> viewModel.requestAdmin()
                                 state.playback.showRecoveryPrompt -> viewModel.retryCurrent()
+                                // No channels yet, or none could load: no list to open, and Settings
+                                // is where that is fixed. The screen shows OK as "Open Settings".
+                                state.channels.isEmpty() -> viewModel.requestAdmin()
                                 else -> viewModel.openChannelList()
                             }
                         }
