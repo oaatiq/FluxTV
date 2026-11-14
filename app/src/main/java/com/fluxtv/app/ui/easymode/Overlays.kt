@@ -64,7 +64,7 @@ fun rememberMinuteClock(): Long {
 
 /** The time in the TV's own format: 24-hour or 12-hour, as its settings say. */
 @Composable
-private fun rememberTimeFormat(): java.text.DateFormat {
+internal fun rememberTimeFormat(): java.text.DateFormat {
     val context = LocalContext.current
     return remember(context) { DateFormat.getTimeFormat(context) }
 }

@@ -1,6 +1,7 @@
 package com.fluxtv.app.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,17 +9,25 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,12 +35,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -51,11 +63,66 @@ import com.fluxtv.app.ui.theme.FluxSurface
 import com.fluxtv.app.ui.theme.FluxSurfaceVariant
 import com.fluxtv.app.ui.theme.FluxWarning
 import com.fluxtv.app.ui.theme.LocalTextScale
+import com.fluxtv.app.ui.theme.LocalTouchUi
 
 private val OnAccent = Color(0xFF00131C)
 
-/** TV-safe title margin so essential controls survive overscan (REQ-DEV-005). */
-fun Modifier.overscan(): Modifier = this.padding(horizontal = 48.dp, vertical = 27.dp)
+/**
+ * The margin that keeps what matters on screen. On a TV, the title-safe margin, so essential controls
+ * survive overscan (REQ-DEV-005). On a phone or tablet, the system bars, the camera cutout and the
+ * keyboard, with a little room besides.
+ */
+fun Modifier.overscan(): Modifier = composed {
+    if (LocalTouchUi.current) {
+        windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp, vertical = 12.dp)
+    } else {
+        padding(horizontal = 48.dp, vertical = 27.dp)
+    }
+}
+
+/**
+ * [tvFraction] of the width on a TV, where a full-width field or button would be hard to take in from
+ * the sofa; the full width on a phone, which is narrow enough already.
+ */
+fun Modifier.formWidth(tvFraction: Float): Modifier = composed {
+    if (LocalTouchUi.current) fillMaxWidth() else fillMaxWidth(tvFraction)
+}
+
+/**
+ * Buttons side by side, on more lines where the screen is too narrow for them all, as a phone held
+ * upright is. On a TV they fit one line, as before.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ButtonRow(modifier: Modifier = Modifier, spacing: Dp = 16.dp, content: @Composable () -> Unit) {
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+        verticalArrangement = Arrangement.spacedBy(spacing)
+    ) { content() }
+}
+
+/** "← Back" at the top of a Settings screen on a phone, for whoever does not use the Back gesture. */
+@Composable
+fun TouchBackButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 8.dp, end = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Image(
+            Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            colorFilter = ColorFilter.tint(FluxOnSurface)
+        )
+        Spacer(Modifier.width(8.dp))
+        BasicText(label, style = TextStyle(color = FluxOnSurface, fontSize = 18.sp, fontWeight = FontWeight.SemiBold))
+    }
+}
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {

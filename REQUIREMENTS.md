@@ -2,8 +2,8 @@
 
 How each requirement in the *FluxTV: Basic Product & System Requirements Specification* (plus the
 added **Hardware resource utilization**, **Smartphone playlist setup**, **Multiple-playlist
-management** and **Programme guide, clock, text size and even volume** sections) is met in this
-implementation.
+management**, **Programme guide, clock, text size and even volume** and **Phones and tablets**
+sections) is met in this implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
@@ -206,6 +206,42 @@ implementation.
 - **EPG-11** — the guide link, its status and the channel-list setting are all in Settings
   (Administrator Mode); Easy Mode only shows programmes.
 
+## Phones and tablets (added section)
+- **Runs on phones and tablets, detected by itself** — `DeviceKind.isTelevision`: a TV says so by
+  its UI mode or the leanback feature, and a device without a touchscreen (a TV box built from plain
+  Android) is a TV too, so a TV is never given the touch layout. `AppContainer.isTelevision`,
+  `LocalTouchUi` (`ui/theme/Theme.kt`). The manifest no longer locks the screen to landscape;
+  `MainActivity` sets landscape on a TV and follows the phone on a phone.
+- **Easy channel switching by touch** — `ui/easymode/TouchEasyModeScreen.kt`. Upright: the picture,
+  the channel playing with Previous / Next, ★ and Settings, and the channel list always on screen
+  (one tap watches a channel). Sideways: the picture alone; a tap shows Previous / Channels / Next,
+  the channel playing and its ★, which hide after 5 s. A swipe up or down on the picture is the next or
+  previous channel (`videoGestures`, like ▲ / ▼). The picture is one view in both layouts, only
+  resized, so turning the phone never re-tunes.
+- **Easy navigation** — categories as chips (Favorites, All channels, then the playlist's groups,
+  opening on the channel playing's), a search by name (accents ignored) or number across all
+  channels, the list scrolled to keep the channel playing in sight; press and hold a channel for a
+  favorite, said in words (`AppViewModel.toggleFavorite(announce = true)`, REQ-SEN-013). Back closes
+  what is open, then leaves the app.
+- **Same Easy Mode protections** — no playlist names, links or choices outside Settings; Settings
+  behind a button in the controls and the optional PIN (REQ-CFG); the same text sizes, guide, clock
+  and recovery (Try again, with Previous / Next / Channels sideways).
+- **Settings by touch** — a Back button on each screen, buttons that wrap on a narrow screen
+  (`ButtonRow`), full-width fields (`formWidth`), no initial focus highlight, one scrolling
+  Diagnostics list. Adding a playlist is *Add a playlist link*; the QR code for adding from a phone
+  is not offered on a phone.
+- **A phone is not a TV turning on** — the boot receiver is switched off and returns at once
+  (`FluxTvApplication.setBootReceiverEnabled`, `BootReceiver`), and `StandbyWatcher` and the Shizuku
+  helper are not started, so FluxTV never opens itself on a phone's unlock or restart. Their
+  preferences and refresh-rate matching are TV-only (`MainActivity`, Preferences).
+- **Sound** — unplugged headphones pause the channel on a phone (`PlayerFactory`
+  `setHandleAudioBecomingNoisy`, never on a TV, where HDMI counts too); a channel Android paused
+  (`FluxPlayerController.pausedBySystem`) gets a Play button (`AppViewModel.resumePlayback`). Audio
+  focus is handled as on the TV, so a call pauses it and it plays on afterwards.
+- **Keys** — on a phone only channel up / down, last channel and info / guide keep their remote
+  meaning, so a keyboard types into the search (`MainActivity.TOUCH_KEYS`).
+- **Acceptance test** — README → Acceptance testing → *Phone*.
+
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
   type with no player module (RTSP, Smooth Streaming) reads "Unable to play this channel" instead of
@@ -263,7 +299,8 @@ implementation.
 ## 19. Device adaptability
 - **REQ-DEV-001/002** — ExoPlayer/track selector use device capabilities and degrade gracefully.
 - **REQ-DEV-003/004** — Compose + sp/dp scale across TV resolutions/densities.
-- **REQ-DEV-005** — `Modifier.overscan()` keeps controls inside the safe area.
+- **REQ-DEV-005** — `Modifier.overscan()` keeps controls inside the safe area: the title-safe margin
+  on a TV, the system bars, cutout and keyboard on a phone.
 
 ## 20–24. Errors, diagnostics, config protection, updates, security
 - **§20** — `ErrorMapper` produces the exact Viewer-facing sentences; technical text kept for admin.

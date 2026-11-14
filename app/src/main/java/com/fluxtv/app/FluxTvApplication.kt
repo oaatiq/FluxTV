@@ -1,6 +1,8 @@
 package com.fluxtv.app
 
 import android.app.Application
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.CoroutineScope
@@ -31,11 +33,15 @@ class FluxTvApplication : Application() {
         }
         container = AppContainer(this)
         appScope.launch { CrashNotes.collect(this@FluxTvApplication, container.diagnosticsStore) }
+        // Starting by itself is for a TV, where turning it on should mean TV. On a phone, opening
+        // FluxTV each time the screen is unlocked or the phone restarts would take the phone over.
+        val television = container.isTelevision
+        appScope.launch { setBootReceiverEnabled(television) }
         // Coming back from standby is announced to receivers registered in code only, so FluxTV
         // listens for it from here, for as long as the process lives.
-        standbyWatcher = StandbyWatcher(this, container).also { it.register() }
+        standbyWatcher = StandbyWatcher(this, container).also { if (television) it.register() }
         // With Shizuku on the TV, a helper that outlives a force-stop of FluxTV starts it on a wake.
-        shizukuWake = ShizukuWake(this, container).also { it.register() }
+        shizukuWake = ShizukuWake(this, container).also { if (television) it.register() }
         // Periodic, unattended playlist refresh (REQ-PL-004), at the interval chosen in Preferences.
         // Scheduling it with the 12 h default here, on every start, overwrote that choice.
         appScope.launch {
@@ -44,5 +50,22 @@ class FluxTvApplication : Application() {
             PlaylistRefreshWorker.schedule(this@FluxTvApplication, hours)
         }
         BootTrace.applicationReadyMs = SystemClock.elapsedRealtime()
+    }
+
+    /**
+     * Off on a phone, so that a restart of the phone does not even start FluxTV's process; on (as the
+     * manifest has it) on a TV. Only written when it differs, which is once.
+     */
+    private fun setBootReceiverEnabled(enabled: Boolean) {
+        try {
+            val component = ComponentName(this, BootReceiver::class.java)
+            val wanted = if (enabled) PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+            else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            if (packageManager.getComponentEnabledSetting(component) != wanted) {
+                packageManager.setComponentEnabledSetting(component, wanted, PackageManager.DONT_KILL_APP)
+            }
+        } catch (_: Exception) {
+            // BootReceiver checks for itself as well.
+        }
     }
 }

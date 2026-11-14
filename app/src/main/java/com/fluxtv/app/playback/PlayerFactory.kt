@@ -52,8 +52,16 @@ object PlayerFactory {
         val evenVolume: EvenVolumeAudioProcessor
     )
 
-    /** [httpClient]: the client the playlist downloads use too (see AppContainer). */
-    fun create(context: Context, maxVideoHeight: Int, httpClient: () -> OkHttpClient): Bundle {
+    /**
+     * [httpClient]: the client the playlist downloads use too (see AppContainer).
+     * [pauseOnNoisyAudio]: pause when the sound loses its output (headphones unplugged); phones only.
+     */
+    fun create(
+        context: Context,
+        maxVideoHeight: Int,
+        pauseOnNoisyAudio: Boolean,
+        httpClient: () -> OkHttpClient
+    ): Bundle {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 30_000,
@@ -112,10 +120,11 @@ object PlayerFactory {
             .setTrackSelector(trackSelector)
             .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(mediaSourceFactory)
-            // Off on purpose. Android counts HDMI among the outputs whose loss makes audio "noisy", so on
-            // a TV box, switching the TV off or to another input could pause live TV, which then stayed
-            // frozen with nothing on screen to start it again.
-            .setHandleAudioBecomingNoisy(false)
+            // Off on a TV, on purpose. Android counts HDMI among the outputs whose loss makes audio
+            // "noisy", so on a TV box, switching the TV off or to another input could pause live TV,
+            // which then stayed frozen with nothing on screen to start it again. On a phone, unplugged
+            // headphones pause it rather than play it out loud, and the screen offers Play.
+            .setHandleAudioBecomingNoisy(pauseOnNoisyAudio)
             .build()
             .apply {
                 setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)

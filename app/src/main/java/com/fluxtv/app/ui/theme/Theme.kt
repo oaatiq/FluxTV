@@ -35,6 +35,12 @@ fun FluxTheme(content: @Composable () -> Unit) {
 }
 
 /**
+ * True on a phone or tablet, worked by touch; false on a TV, worked by its remote (see
+ * [com.fluxtv.app.isTelevision]). It never changes while FluxTV runs.
+ */
+val LocalTouchUi = staticCompositionLocalOf { false }
+
+/**
  * How many times the normal size TV's text is (Preferences → Text size): 1, 1.25 or 1.5. Text
  * follows it by itself; layouts read it for the widths that have to grow with the text.
  */

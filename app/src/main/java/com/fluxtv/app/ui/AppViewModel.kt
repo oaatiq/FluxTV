@@ -585,15 +585,25 @@ class AppViewModel(
 
     // ---------- favorites ----------
 
-    /** Favorites belong to the playlist the channel is from. */
-    fun toggleFavorite(channel: Channel) {
+    /**
+     * Favorites belong to the playlist the channel is from. [announce]: say what changed, in words, for
+     * a touch screen, where a long press changes it with nothing else to show it happened.
+     */
+    fun toggleFavorite(channel: Channel, announce: Boolean = false) {
         val playlistId = container.channelRepository.playlistId ?: return
+        if (announce) {
+            val was = channel.stableId in _state.value.favorites
+            showTransient(if (was) "${channel.name} removed from Favorites" else "${channel.name} added to Favorites")
+        }
         viewModelScope.launch { container.settingsRepository.toggleFavorite(playlistId, channel.stableId) }
     }
 
     // ---------- recovery (REQ-REC-005) ----------
 
     fun retryCurrent() = container.playerController.retryNow()
+
+    /** Play on a phone, after Android paused the channel (headphones unplugged, another app's sound). */
+    fun resumePlayback() = container.playerController.onResume()
 
     // ---------- admin ----------
 

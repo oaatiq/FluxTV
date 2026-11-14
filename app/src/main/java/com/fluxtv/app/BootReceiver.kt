@@ -41,6 +41,8 @@ class BootReceiver : BroadcastReceiver() {
         if (action !in START_ACTIONS) return
 
         val container = (context.applicationContext as FluxTvApplication).container
+        // A phone is not a TV turning on: FluxTV opens when it is opened (see FluxTvApplication).
+        if (!container.isTelevision) return
         val firstSignal = BootTrace.claimStart()
         val signal = action.substringAfterLast('.')
         val pending = goAsync()

@@ -1,7 +1,8 @@
 # FluxTV
 
-A deliberately simple, senior-friendly **IPTV player for Android TV**. Its whole identity is
-*"turn on → watch TV."* Once an administrator has configured a playlist, the Viewer only ever deals
+A deliberately simple, senior-friendly **IPTV player for Android TV**, which also runs on **Android
+phones and tablets**, worked by touch there (see [On a phone or tablet](#on-a-phone-or-tablet)). Its
+whole identity is *"turn on → watch TV."* Once an administrator has configured a playlist, the Viewer only ever deals
 with **channels, favorites, volume, and programmes** — never M3U, HLS, bitrate, codecs, buffers,
 FPS, servers or URLs.
 
@@ -13,7 +14,8 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
 
 ## Tech stack
 
-- **Kotlin**, single-activity **Jetpack Compose** (with `androidx.tv:tv-material`) for the 10-foot UI
+- **Kotlin**, single-activity **Jetpack Compose** (with `androidx.tv:tv-material`) for the 10-foot UI,
+  and a touch layout of its own for phones and tablets
 - **Media3 / ExoPlayer** for playback, adaptive streaming, buffering, recovery and diagnostics, with
   its FFmpeg extension for sound formats the TV cannot decode, over the same **OkHttp** client the
   playlist downloads use
@@ -74,6 +76,12 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 FluxTV then appears in the Android TV launcher's apps row (it registers a `LEANBACK_LAUNCHER`
 entry). You can watch/operate it from a dev machine with `scrcpy`.
+
+### Install on a phone or tablet
+
+The same APK installs on a phone (Android 7 or newer): copy it over and open it, or with USB debugging
+on, `adb install -r app/build/outputs/apk/release/app-release.apk`. FluxTV appears among the phone's
+apps.
 
 ## First run
 
@@ -223,6 +231,55 @@ FluxTV. The last channel (one watched for a few seconds) is remembered, so the n
 it. Choosing the channel that is already playing just closes the list, plays it on if something
 had paused it, and shows its banner, so it is also a way to see what is on. **Home** also leaves (the app stays in the background), and **Settings** (hold OK, or
 MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.
+
+## On a phone or tablet
+
+FluxTV recognises a phone or tablet by itself (a device that is not a TV and has a touchscreen; a TV
+box without a touchscreen is always treated as a TV) and lays Easy Mode out for touch. The channels,
+favorites, programme guide, text size and Settings are the same as on the TV.
+
+**Held upright**, the picture is at the top. Under it are the channel playing (number, logo, name,
+and what is on now and next with a progress bar), big **Previous** and **Next** buttons, a ★ for the
+favorites and a ⚙ for Settings, and below them the channel list, always on screen: **tap a channel to
+watch it**. Above the list are a **Find a channel** field (by name, accents ignored, or by number,
+across all channels) and the categories as a row of chips (Favorites, All channels, then the
+playlist's own), starting on the category of the channel playing. When the channel changes, the list
+scrolls to keep it in sight.
+
+**Sideways** (turn the phone, or press the full-screen button in the corner of the picture), the
+picture fills the screen. A tap shows the controls for a few seconds: **‹ Previous**, **Channels** and
+**Next ›** in the middle, the channel playing with its ★ at the bottom, and the clock, ⚙ Settings and
+the button back to upright at the top. **Channels** opens the same list as upright from the left; tap
+a channel to watch it, or tap the picture beside the list to close it. Each channel change shows the
+channel banner, as on the TV.
+
+| Gesture | Does |
+|---|---|
+| **Tap a channel** | Watch it (the one already playing: show what is on, and play on if it was paused) |
+| **Swipe up / down on the picture** | Next / previous channel (like ▲ / ▼ on the remote) |
+| **Press and hold a channel** | Add it to the favorites, or take it out; a message says which |
+| **Tap the picture** (sideways) | Show or hide the controls |
+| **Back** | Close the list, the controls or the keyboard; then leave FluxTV, as in any phone app |
+
+The full-screen button turns the screen at once, whichever way the phone is held. With auto-rotate
+on, the phone takes over again once it is held the new way; with the rotation locked, the screen
+stays as the button left it, so full screen works with the lock on too.
+
+What a phone does differently from a TV:
+
+- **It never opens by itself.** Starting when the TV turns on (after a boot, or a wake from standby)
+  and the Shizuku helper are for TVs only: on a phone FluxTV opens when it is opened, and its boot
+  receiver is switched off.
+- **Unplugged headphones pause the channel** instead of playing it out loud; a large **Play** button
+  starts it again, as it does after another app took the sound. A phone call pauses it and it plays
+  on afterwards. (A TV never pauses for the sound output: losing HDMI counts as the same thing.)
+- **Settings** is reached with the ⚙ button (behind the PIN, if one is set), has a **Back** button at
+  the top of each screen, and lays its buttons out on more lines where the screen is narrow. A
+  playlist is added with **Add a playlist link** (paste the link): the QR code for adding channels
+  from a phone is not offered on the phone itself. **Start FluxTV when the TV turns on** and **Match
+  TV refresh rate** are left out.
+- The status bar shows while the phone is upright and hides sideways, and the screen stays on while
+  FluxTV is open, as on the TV.
 
 ## Banner, programme guide and clock
 
@@ -427,6 +484,15 @@ playlist URL can carry credentials.
 Devices: Xiaomi MiTV (MStar, Android 9) and MINIX NEO U8K-ULTRA (Amlogic S928X-K, Android 11 AOSP —
 the Android version that needs the permission above).
 
+**Phone.** Install on a phone and open FluxTV: it opens on the phone layout, never the TV's. Upright,
+tap channels in the list, swipe up and down on the picture, and press and hold a channel to make it a
+favorite (the message says so, and Favorites lists it). Type part of a name in *Find a channel*. Turn
+the phone sideways: the picture fills the screen and a tap shows the controls, whose **Channels**
+opens the list. With the rotation lock on, the full-screen button still turns it sideways and back.
+Unplug headphones while a channel plays: it pauses and offers Play. Lock and unlock the phone, and
+restart it: FluxTV does not open by itself. On a TV, everything above is as before: the remote's
+controls, starting when the TV turns on, and refresh-rate matching.
+
 ## Project structure
 
 ```
@@ -436,12 +502,15 @@ app/src/main/java/com/fluxtv/app/
 │                   diagnostics
 ├─ setup/           the phone page behind the QR code (a small web server, during setup only)
 ├─ ui/
-│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock)
+│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock);
+│  │                TouchEasyModeScreen is the phone and tablet layout
 │  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics
 │  ├─ components/   large-type, high-contrast, focusable TV widgets
 │  └─ AppViewModel  the Easy Mode state machine (STARTING → WATCHING ⇄ CHANNEL LIST)
 ├─ work/            WorkManager periodic refresh
-└─ MainActivity     central remote-key handling + fullscreen + frame-rate matching
+├─ DeviceKind       TV or phone/tablet, which decides the layout and whether FluxTV starts by itself
+└─ MainActivity     central remote-key handling + fullscreen + frame-rate matching; orientation and
+                    system bars on a phone
 ```
 
 The launcher artwork in `app/src/main/res` — the TV home-screen tile (banner) and the app icon — is

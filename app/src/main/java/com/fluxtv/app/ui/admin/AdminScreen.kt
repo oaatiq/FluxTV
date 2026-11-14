@@ -56,6 +56,7 @@ import com.fluxtv.app.openSelfStartPermission
 import com.fluxtv.app.setup.AddStatus
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.UiState
+import com.fluxtv.app.ui.components.ButtonRow
 import com.fluxtv.app.ui.components.ChannelRow
 import com.fluxtv.app.ui.components.FluxButton
 import com.fluxtv.app.ui.components.FluxChip
@@ -65,10 +66,14 @@ import com.fluxtv.app.ui.components.InfoRow
 import com.fluxtv.app.ui.components.PlaylistRow
 import com.fluxtv.app.ui.components.QrCode
 import com.fluxtv.app.ui.components.SectionTitle
+import com.fluxtv.app.ui.components.TouchBackButton
+import com.fluxtv.app.ui.components.formWidth
+import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
 import com.fluxtv.app.ui.theme.FluxSurface
+import com.fluxtv.app.ui.theme.LocalTouchUi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -87,6 +92,10 @@ private enum class AdminSection {
  *
  * Playlists are managed here and only here: Easy Mode never names a playlist or offers a choice of
  * one, and shows the channels of the one in use.
+ *
+ * On a phone, the same screens are worked by touch: buttons wrap onto more lines where the screen is
+ * narrow, each screen has a Back button at the top, and what only a TV does (starting when it turns
+ * on, refresh-rate matching, adding channels from another phone) is left out.
  */
 @Composable
 fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
@@ -101,7 +110,7 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
         mutableStateOf(if (state.settings.playlists.isEmpty()) AdminSection.PLAYLISTS else AdminSection.MENU)
     }
     var playlistId by remember { mutableStateOf<String?>(null) }
-    BackHandler(enabled = true) {
+    val goBack: () -> Unit = {
         when (section) {
             AdminSection.MENU -> vm.exitAdmin()
             AdminSection.PLAYLIST, AdminSection.ADD_BY_PHONE, AdminSection.ADD_BY_TYPING ->
@@ -109,36 +118,45 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
             else -> section = AdminSection.MENU
         }
     }
+    BackHandler(enabled = true) { goBack() }
 
-    Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp)) {
-        when (section) {
-            AdminSection.MENU -> AdminMenu(
-                state,
-                onSelect = { section = it },
-                onExit = { vm.exitAdmin() },
-                onExitApp = onExitApp
-            )
-            AdminSection.PLAYLISTS -> PlaylistsSection(
-                state,
-                vm,
-                onOpen = { playlistId = it; section = AdminSection.PLAYLIST },
-                onAddByPhone = { section = AdminSection.ADD_BY_PHONE },
-                onAddByTyping = { section = AdminSection.ADD_BY_TYPING }
-            )
-            AdminSection.PLAYLIST -> PlaylistSection(
-                state,
-                vm,
-                id = playlistId.orEmpty(),
-                onGone = { section = AdminSection.PLAYLISTS }
-            )
-            AdminSection.ADD_BY_PHONE -> PhoneSetupSection(state, vm, onDone = { section = AdminSection.PLAYLISTS })
-            AdminSection.ADD_BY_TYPING -> AddByTypingSection(state, vm)
-            AdminSection.CHANNELS -> ChannelsSection(state, vm)
-            AdminSection.PREFERENCES -> PreferencesSection(state, vm)
-            AdminSection.DIAGNOSTICS -> DiagnosticsSection(state, vm)
+    Column(Modifier.fillMaxSize().overscan()) {
+        if (LocalTouchUi.current && section != AdminSection.MENU) {
+            TouchBackButton(if (section in PLAYLIST_SCREENS) "Playlists" else "Settings", onClick = goBack)
+            Spacer(Modifier.height(8.dp))
+        }
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            when (section) {
+                AdminSection.MENU -> AdminMenu(
+                    state,
+                    onSelect = { section = it },
+                    onExit = { vm.exitAdmin() },
+                    onExitApp = onExitApp
+                )
+                AdminSection.PLAYLISTS -> PlaylistsSection(
+                    state,
+                    vm,
+                    onOpen = { playlistId = it; section = AdminSection.PLAYLIST },
+                    onAddByPhone = { section = AdminSection.ADD_BY_PHONE },
+                    onAddByTyping = { section = AdminSection.ADD_BY_TYPING }
+                )
+                AdminSection.PLAYLIST -> PlaylistSection(
+                    state,
+                    vm,
+                    id = playlistId.orEmpty(),
+                    onGone = { section = AdminSection.PLAYLISTS }
+                )
+                AdminSection.ADD_BY_PHONE -> PhoneSetupSection(state, vm, onDone = { section = AdminSection.PLAYLISTS })
+                AdminSection.ADD_BY_TYPING -> AddByTypingSection(state, vm)
+                AdminSection.CHANNELS -> ChannelsSection(state, vm)
+                AdminSection.PREFERENCES -> PreferencesSection(state, vm)
+                AdminSection.DIAGNOSTICS -> DiagnosticsSection(state, vm)
+            }
         }
     }
 }
+
+private val PLAYLIST_SCREENS = setOf(AdminSection.PLAYLIST, AdminSection.ADD_BY_PHONE, AdminSection.ADD_BY_TYPING)
 
 @Composable
 private fun PinGate(expected: String, onUnlock: () -> Unit, onCancel: () -> Unit) {
@@ -154,7 +172,7 @@ private fun PinGate(expected: String, onUnlock: () -> Unit, onCancel: () -> Unit
                 label = "PIN",
                 value = pin,
                 onValueChange = { pin = it.filter { c -> c.isDigit() }.take(8); error = false },
-                modifier = Modifier.fillMaxWidth(0.35f),
+                modifier = Modifier.formWidth(0.35f),
                 focusRequester = focus,
                 keyboardType = KeyboardType.NumberPassword
             )
@@ -175,8 +193,10 @@ private fun AdminMenu(
     onExitApp: () -> Unit
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val touch = LocalTouchUi.current
+    // The remote needs somewhere to start; on a touch screen nothing is picked until it is touched.
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionTitle("FluxTV Settings")
         BasicText(
             (state.settings.activePlaylist?.let { "“${it.name}” • " } ?: "") + "${state.channels.size} channels" +
@@ -186,12 +206,12 @@ private fun AdminMenu(
             style = TextStyle(color = FluxMuted, fontSize = 18.sp)
         )
         Spacer(Modifier.height(8.dp))
-        FluxButton("Playlists", Modifier.fillMaxWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
-        FluxButton("Channels & favorites", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
-        FluxButton("Preferences", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
-        FluxButton("Diagnostics", Modifier.fillMaxWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
+        FluxButton("Playlists", Modifier.formWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
+        FluxButton("Channels & favorites", Modifier.formWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
+        FluxButton("Preferences", Modifier.formWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
+        FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
         // Side by side so the menu keeps its five rows and still fits a 720p screen.
-        Row(Modifier.fillMaxWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
             FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
         }
@@ -208,9 +228,10 @@ private fun PlaylistsSection(
     onAddByTyping: () -> Unit
 ) {
     val first = remember { FocusRequester() }
+    val touch = LocalTouchUi.current
     LaunchedEffect(Unit) {
         vm.clearPlaylistMessages()
-        runCatching { first.requestFocus() }
+        if (!touch) runCatching { first.requestFocus() }
     }
     val active = state.settings.activePlaylist
     Column(
@@ -224,14 +245,19 @@ private fun PlaylistsSection(
                 if (state.lastUpdatedMs > 0) ", updated ${formatTime(state.lastUpdatedMs)}." else ".",
             style = TextStyle(color = FluxMuted, fontSize = 18.sp)
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FluxButton("Add channels using your phone", focusRequester = first) { onAddByPhone() }
-            FluxButton("Type a link on the TV") { onAddByTyping() }
+        if (touch) {
+            // This is the phone: the link is pasted here, with no QR code to scan.
+            FluxButton("Add a playlist link") { onAddByTyping() }
+        } else {
+            ButtonRow {
+                FluxButton("Add channels using your phone", focusRequester = first) { onAddByPhone() }
+                FluxButton("Type a link on the TV") { onAddByTyping() }
+            }
         }
         if (state.settings.playlists.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             BasicText("Saved playlists", style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold))
-            Column(Modifier.fillMaxWidth(0.7f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.formWidth(0.7f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.settings.playlists.forEach { playlist ->
                     PlaylistRow(playlist.name, inUse = playlist.id == state.settings.activePlaylistId) { onOpen(playlist.id) }
                 }
@@ -272,17 +298,19 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
     val linkButton = remember { FocusRequester() }
     val guideButton = remember { FocusRequester() }
     val field = remember { FocusRequester() }
+    val touch = LocalTouchUi.current
     LaunchedEffect(Unit) {
         vm.clearPlaylistMessages()
-        runCatching { first.requestFocus() }
+        if (!touch) runCatching { first.requestFocus() }
     }
-    // Into the field when it opens, and back to its button when it closes.
+    // Into the field when it opens (which brings up a phone's keyboard), and back to its button when
+    // it closes, for the remote.
     LaunchedEffect(editing) {
         val edit = editing
         if (edit != null) {
             lastEdit = edit
             runCatching { field.requestFocus() }
-        } else {
+        } else if (!touch) {
             val button = when (lastEdit) {
                 PlaylistEdit.NAME -> renameButton
                 PlaylistEdit.LINK -> linkButton
@@ -305,13 +333,13 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
         )
         BasicText(
             playlist.url,
-            modifier = Modifier.fillMaxWidth(0.9f),
+            modifier = Modifier.formWidth(0.9f),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             style = TextStyle(color = FluxMuted, fontSize = 16.sp)
         )
         GuideStatus(vm, playlist, inUse)
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        ButtonRow {
             // One button whose job follows the playlist, so the focus stays on it once it is in use.
             FluxButton(if (inUse) "Refresh now" else "Use this playlist", focusRequester = first) {
                 if (inUse) vm.refreshNow() else vm.usePlaylist(id)
@@ -333,10 +361,10 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
                     label = "Name",
                     value = nameDraft,
                     onValueChange = { nameDraft = it.take(60) },
-                    modifier = Modifier.fillMaxWidth(0.6f),
+                    modifier = Modifier.formWidth(0.6f),
                     focusRequester = field
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ButtonRow {
                     FluxButton("Save name") { vm.renamePlaylist(id, nameDraft); editing = null }
                     FluxButton("Cancel") { editing = null }
                 }
@@ -346,12 +374,12 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
                     label = "Playlist link (M3U) or file path",
                     value = linkDraft,
                     onValueChange = { linkDraft = it },
-                    modifier = Modifier.fillMaxWidth(0.9f),
+                    modifier = Modifier.formWidth(0.9f),
                     focusRequester = field,
                     keyboardType = KeyboardType.Uri
                 )
-                FluxToggleRow("Source is a local file", isFile, Modifier.fillMaxWidth(0.6f)) { isFile = it }
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FluxToggleRow("Source is a local file", isFile, Modifier.formWidth(0.6f)) { isFile = it }
+                ButtonRow {
                     FluxButton("Check and save link") {
                         vm.editPlaylistLink(id, linkDraft, if (isFile) "file" else "url")
                         editing = null
@@ -369,11 +397,11 @@ private fun PlaylistSection(state: UiState, vm: AppViewModel, id: String, onGone
                     label = "Programme guide link (XMLTV, may end in .gz)",
                     value = guideDraft,
                     onValueChange = { guideDraft = it },
-                    modifier = Modifier.fillMaxWidth(0.9f),
+                    modifier = Modifier.formWidth(0.9f),
                     focusRequester = field,
                     keyboardType = KeyboardType.Uri
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ButtonRow {
                     FluxButton("Save guide link") { vm.setGuideUrl(id, guideDraft); editing = null }
                     FluxButton("Use the playlist's own") { vm.setGuideUrl(id, ""); editing = null }
                     FluxButton("Cancel") { editing = null }
@@ -443,12 +471,12 @@ private fun AddByTypingSection(state: UiState, vm: AppViewModel) {
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SectionTitle("Type a playlist link")
+        SectionTitle(if (LocalTouchUi.current) "Add a playlist link" else "Type a playlist link")
         FluxTextField(
             label = "Playlist address (M3U URL) or file path",
             value = url,
             onValueChange = { url = it },
-            modifier = Modifier.fillMaxWidth(0.9f),
+            modifier = Modifier.formWidth(0.9f),
             placeholder = "https://provider.example/playlist.m3u",
             focusRequester = first,
             keyboardType = KeyboardType.Uri
@@ -457,11 +485,11 @@ private fun AddByTypingSection(state: UiState, vm: AppViewModel) {
             label = "Name (optional)",
             value = name,
             onValueChange = { name = it.take(60) },
-            modifier = Modifier.fillMaxWidth(0.6f),
+            modifier = Modifier.formWidth(0.6f),
             placeholder = "For example: Sports package"
         )
-        FluxToggleRow("Source is a local file", isFile, Modifier.fillMaxWidth(0.6f)) { isFile = it }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        FluxToggleRow("Source is a local file", isFile, Modifier.formWidth(0.6f)) { isFile = it }
+        ButtonRow {
             FluxButton("Check and add") { vm.addTypedPlaylist(url, name, if (isFile) "file" else "url") }
             FluxButton("Use sample test playlist") {
                 url = "https://iptv-org.github.io/iptv/index.m3u"
@@ -598,7 +626,8 @@ private fun PlaylistMessages(state: UiState) {
 @Composable
 private fun ChannelsSection(state: UiState, vm: AppViewModel) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val touch = LocalTouchUi.current
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle("Channels & favorites")
         state.settings.activePlaylist?.let {
@@ -607,14 +636,17 @@ private fun ChannelsSection(state: UiState, vm: AppViewModel) {
         FluxToggleRow(
             "Easy Mode shows favorites only",
             state.settings.favoritesOnly,
-            Modifier.fillMaxWidth(0.7f),
+            Modifier.formWidth(0.7f),
             focusRequester = first
         ) { vm.setFavoritesOnly(it) }
-        BasicText("OK: add or remove a favorite ★", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText(
+            if (touch) "Tap a channel to add or remove a favorite ★" else "OK: add or remove a favorite ★",
+            style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+        )
         if (state.channels.isEmpty()) {
             BasicText("No channels yet. Add a playlist first.", style = TextStyle(color = FluxMuted, fontSize = 22.sp))
         } else {
-            LazyColumn(Modifier.fillMaxWidth(0.8f).weight(1f)) {
+            LazyColumn(Modifier.formWidth(0.8f).weight(1f)) {
                 itemsIndexed(state.channels, key = { _, c -> c.stableId }) { _, channel ->
                     ChannelRow(
                         number = channel.number,
@@ -636,7 +668,10 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
     var pin by remember { mutableStateOf("") }
     var userAgent by remember { mutableStateOf(state.settings.userAgent) }
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // On a phone: no remote to place, and nothing of what only a TV does (starting when it turns on,
+    // its refresh rate), which is left out below.
+    val touch = LocalTouchUi.current
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -645,12 +680,12 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         FluxToggleRow(
             "Easy Mode shows favorites only",
             state.settings.favoritesOnly,
-            Modifier.fillMaxWidth(0.7f),
+            Modifier.formWidth(0.7f),
             focusRequester = first
         ) { vm.setFavoritesOnly(it) }
 
-        BasicText("Text size on TV", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        BasicText(if (touch) "Text size" else "Text size on TV", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        ButtonRow(spacing = 12.dp) {
             FluxChip("Normal", state.settings.textSizePercent == TEXT_SIZE_NORMAL) { vm.setTextSize(TEXT_SIZE_NORMAL) }
             FluxChip("Large", state.settings.textSizePercent == TEXT_SIZE_LARGE) { vm.setTextSize(TEXT_SIZE_LARGE) }
             FluxChip("Extra large", state.settings.textSizePercent == TEXT_SIZE_EXTRA_LARGE) {
@@ -666,7 +701,7 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         FluxToggleRow(
             "Show what is on in the channel list",
             state.settings.programmeInList,
-            Modifier.fillMaxWidth(0.7f)
+            Modifier.formWidth(0.7f)
         ) { vm.setProgrammeInList(it) }
         BasicText(
             "The programme on now, in smaller grey letters after each channel name, when the programme guide has it.",
@@ -676,7 +711,7 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         FluxToggleRow(
             "Even out the volume between channels",
             state.settings.evenVolume,
-            Modifier.fillMaxWidth(0.7f)
+            Modifier.formWidth(0.7f)
         ) { vm.setEvenVolume(it) }
         BasicText(
             "Quiet channels are brought up and loud ones down, so changing channel does not need the volume button.",
@@ -684,61 +719,63 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         )
 
         BasicText("Maximum quality", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        ButtonRow(spacing = 12.dp) {
             FluxChip("Auto", state.settings.maxVideoHeight == 0) { vm.setMaxVideoHeight(0) }
             FluxChip("Up to 720p", state.settings.maxVideoHeight == 720) { vm.setMaxVideoHeight(720) }
             FluxChip("Up to 1080p", state.settings.maxVideoHeight == 1080) { vm.setMaxVideoHeight(1080) }
         }
 
-        FluxToggleRow(
-            "Match TV refresh rate to the video",
-            state.settings.frameRateMatching,
-            Modifier.fillMaxWidth(0.7f)
-        ) { vm.setFrameRateMatching(it) }
+        if (!touch) {
+            FluxToggleRow(
+                "Match TV refresh rate to the video",
+                state.settings.frameRateMatching,
+                Modifier.formWidth(0.7f)
+            ) { vm.setFrameRateMatching(it) }
 
-        FluxToggleRow(
-            "Start FluxTV when the TV turns on",
-            state.settings.startOnBoot,
-            Modifier.fillMaxWidth(0.7f)
-        ) { vm.setStartOnBoot(it) }
+            FluxToggleRow(
+                "Start FluxTV when the TV turns on",
+                state.settings.startOnBoot,
+                Modifier.formWidth(0.7f)
+            ) { vm.setStartOnBoot(it) }
 
-        // Android 10+ blocks an app from opening itself unless it is exempt, so on those versions
-        // the toggle above needs one permission from the administrator to have any effect.
-        if (state.settings.startOnBoot && !canStartItself(context)) {
-            BasicText(
-                "This Android version needs one more permission before FluxTV may open itself.\n" +
-                    "Choose FluxTV on the next screen and allow it.",
-                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-            )
-            FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
-        }
-
-        // A force-stopped app is not run again by a wake. Where Shizuku runs on the TV, FluxTV can have
-        // a helper that outlives it; without Shizuku there is nothing to show.
-        val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
-        val shizukuState by shizuku.state.collectAsState()
-        when (shizukuState) {
-            ShizukuWake.State.NOT_RUNNING -> Unit
-            ShizukuWake.State.NEEDS_PERMISSION -> {
+            // Android 10+ blocks an app from opening itself unless it is exempt, so on those versions
+            // the toggle above needs one permission from the administrator to have any effect.
+            if (state.settings.startOnBoot && !canStartItself(context)) {
                 BasicText(
-                    "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also start by " +
-                        "itself when the TV wakes after it was force-stopped.",
+                    "This Android version needs one more permission before FluxTV may open itself.\n" +
+                        "Choose FluxTV on the next screen and allow it.",
                     style = TextStyle(color = FluxMuted, fontSize = 18.sp)
                 )
-                FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
+                FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
             }
-            ShizukuWake.State.STARTING -> BasicText(
-                "Starting the Shizuku helper…",
-                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-            )
-            ShizukuWake.State.ACTIVE -> BasicText(
-                "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
-                style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-            )
+
+            // A force-stopped app is not run again by a wake. Where Shizuku runs on the TV, FluxTV can have
+            // a helper that outlives it; without Shizuku there is nothing to show.
+            val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
+            val shizukuState by shizuku.state.collectAsState()
+            when (shizukuState) {
+                ShizukuWake.State.NOT_RUNNING -> Unit
+                ShizukuWake.State.NEEDS_PERMISSION -> {
+                    BasicText(
+                        "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also start by " +
+                            "itself when the TV wakes after it was force-stopped.",
+                        style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+                    )
+                    FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
+                }
+                ShizukuWake.State.STARTING -> BasicText(
+                    "Starting the Shizuku helper…",
+                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+                )
+                ShizukuWake.State.ACTIVE -> BasicText(
+                    "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
+                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
+                )
+            }
         }
 
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        ButtonRow(spacing = 12.dp) {
             FluxChip("Every 6 hours", state.settings.refreshIntervalHours == 6) { vm.setRefreshHours(6) }
             FluxChip("Every 12 hours", state.settings.refreshIntervalHours == 12) { vm.setRefreshHours(12) }
             FluxChip("Every 24 hours", state.settings.refreshIntervalHours == 24) { vm.setRefreshHours(24) }
@@ -754,10 +791,10 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             label = "User-Agent",
             value = userAgent,
             onValueChange = { userAgent = it.take(200) },
-            modifier = Modifier.fillMaxWidth(0.7f),
+            modifier = Modifier.formWidth(0.7f),
             placeholder = DEFAULT_USER_AGENT
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        ButtonRow {
             FluxButton("Save player name") { vm.setUserAgent(userAgent) }
             FluxButton("Use FluxTV's own") { userAgent = ""; vm.setUserAgent("") }
         }
@@ -771,10 +808,10 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             label = "New PIN (digits)",
             value = pin,
             onValueChange = { pin = it.filter { c -> c.isDigit() }.take(8) },
-            modifier = Modifier.fillMaxWidth(0.4f),
+            modifier = Modifier.formWidth(0.4f),
             keyboardType = KeyboardType.NumberPassword
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        ButtonRow {
             FluxButton("Save PIN") { vm.setAdminPin(pin); pin = "" }
             FluxButton("Clear PIN") { vm.setAdminPin(""); pin = "" }
         }
@@ -786,7 +823,8 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
     val scope = rememberCoroutineScope()
     var reachability by remember { mutableStateOf<String?>(null) }
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val touch = LocalTouchUi.current
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
     // Buffer, bandwidth and dropped frames otherwise only refresh on playback state changes.
     LaunchedEffect(Unit) {
         while (true) {
@@ -798,48 +836,58 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
     val d by vm.controller.diagnostics.collectAsStateWithLifecycle()
     val events by vm.controller.events.collectAsStateWithLifecycle()
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionTitle("Diagnostics")
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FluxButton("Check this channel", focusRequester = first) {
-                val channel = state.currentChannel
-                if (channel != null) {
-                    reachability = "Checking…"
-                    scope.launch { reachability = if (vm.checkReachable(channel)) "Reachable" else "Not reachable" }
+    // One list, figures and history alike, so that a phone held sideways, too short for the figures
+    // alone, can scroll down to the history; a TV shows it as before, the history under the figures.
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { SectionTitle("Diagnostics", Modifier.padding(bottom = 12.dp)) }
+        item {
+            ButtonRow(Modifier.padding(bottom = 12.dp)) {
+                FluxButton("Check this channel", focusRequester = first) {
+                    val channel = state.currentChannel
+                    if (channel != null) {
+                        reachability = "Checking…"
+                        scope.launch { reachability = if (vm.checkReachable(channel)) "Reachable" else "Not reachable" }
+                    }
                 }
+                FluxButton("Clear history") { vm.clearDiagnostics() }
             }
-            FluxButton("Clear history") { vm.clearDiagnostics() }
         }
 
-        Column {
-            InfoRow("Channel", d.channelName ?: "—")
-            reachability?.let { InfoRow("Reachability", it) }
-            InfoRow("Decoding", decodeLabel(d))
-            InfoRow("Resolution", if (d.videoWidth > 0) "${d.videoWidth}×${d.videoHeight}" else "—")
-            InfoRow("Frame rate", if (d.frameRate > 0f) "${d.frameRate} fps" else "—")
-            InfoRow("Video codec", d.videoCodec ?: "—")
-            InfoRow("Audio codec", d.audioCodec ?: "—")
-            InfoRow("Video bitrate", if (d.videoBitrate > 0) "${d.videoBitrate / 1000} kbps" else "—")
-            InfoRow("Estimated bandwidth", if (d.bandwidthBps > 0) formatMbps(d.bandwidthBps) else "—")
-            InfoRow("Buffered", "${d.bufferedMs / 1000} s")
-            InfoRow("Dropped frames", d.droppedFrames.toString())
-            InfoRow("Buffering events", d.bufferingEvents.toString())
-            InfoRow("Recoveries", d.recoveryCount.toString())
-            InfoRow("Channel startup time", if (d.startupTimeMs > 0) "${d.startupTimeMs} ms" else "—")
-            InfoRow("Volume levelling", d.volumeLevelling)
-            InfoRow("Playback state", d.playbackState)
+        item {
+            Column(Modifier.padding(bottom = 12.dp)) {
+                InfoRow("Channel", d.channelName ?: "—")
+                reachability?.let { InfoRow("Reachability", it) }
+                InfoRow("Decoding", decodeLabel(d))
+                InfoRow("Resolution", if (d.videoWidth > 0) "${d.videoWidth}×${d.videoHeight}" else "—")
+                InfoRow("Frame rate", if (d.frameRate > 0f) "${d.frameRate} fps" else "—")
+                InfoRow("Video codec", d.videoCodec ?: "—")
+                InfoRow("Audio codec", d.audioCodec ?: "—")
+                InfoRow("Video bitrate", if (d.videoBitrate > 0) "${d.videoBitrate / 1000} kbps" else "—")
+                InfoRow("Estimated bandwidth", if (d.bandwidthBps > 0) formatMbps(d.bandwidthBps) else "—")
+                InfoRow("Buffered", "${d.bufferedMs / 1000} s")
+                InfoRow("Dropped frames", d.droppedFrames.toString())
+                InfoRow("Buffering events", d.bufferingEvents.toString())
+                InfoRow("Recoveries", d.recoveryCount.toString())
+                InfoRow("Channel startup time", if (d.startupTimeMs > 0) "${d.startupTimeMs} ms" else "—")
+                InfoRow("Volume levelling", d.volumeLevelling)
+                InfoRow("Playback state", d.playbackState)
+            }
         }
 
-        BasicText("History", style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold))
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-            items(events.reversed()) { event ->
-                Column(Modifier.padding(vertical = 4.dp)) {
-                    BasicText(
-                        "${formatTime(event.timestampMs)}  [${event.category}]  ${event.channelName ?: ""}",
-                        style = TextStyle(color = FluxMuted, fontSize = 14.sp)
-                    )
-                    BasicText(event.message, style = TextStyle(color = FluxOnSurface, fontSize = 16.sp))
-                }
+        item {
+            BasicText(
+                "History",
+                modifier = Modifier.padding(bottom = 12.dp),
+                style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            )
+        }
+        items(events.reversed()) { event ->
+            Column(Modifier.padding(vertical = 4.dp)) {
+                BasicText(
+                    "${formatTime(event.timestampMs)}  [${event.category}]  ${event.channelName ?: ""}",
+                    style = TextStyle(color = FluxMuted, fontSize = 14.sp)
+                )
+                BasicText(event.message, style = TextStyle(color = FluxOnSurface, fontSize = 16.sp))
             }
         }
     }

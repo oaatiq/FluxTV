@@ -34,5 +34,13 @@ class AppContainer(context: Context) {
     val channelRepository = ChannelRepository(playlistCache, playlistFetcher)
     val guideRepository = GuideRepository(appContext) { httpClient }
     val networkMonitor = NetworkMonitor(appContext)
-    val playerController = FluxPlayerController(appContext, diagnosticsStore, networkMonitor) { httpClient }
+    /** A TV and its remote, or a phone or tablet worked by touch (see [isTelevision]). */
+    val isTelevision: Boolean = isTelevision(appContext)
+
+    val playerController = FluxPlayerController(
+        appContext,
+        diagnosticsStore,
+        networkMonitor,
+        pauseOnNoisyAudio = !isTelevision
+    ) { httpClient }
 }

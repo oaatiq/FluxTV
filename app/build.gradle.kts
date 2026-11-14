@@ -75,6 +75,9 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation("androidx.compose.animation:animation")
     implementation(libs.androidx.tv.material)
+    // Icons for the touch controls on phones and tablets. tv-material already brings this library in;
+    // it is named here because FluxTV uses it directly.
+    implementation(libs.androidx.material.icons.core)
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)

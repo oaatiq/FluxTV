@@ -46,6 +46,11 @@ class FluxPlayerController(
     private val context: Context,
     private val diagnosticsStore: DiagnosticsStore,
     private val networkMonitor: NetworkMonitor,
+    /**
+     * Pause when the sound loses its output, such as headphones being unplugged: what a phone
+     * expects. Never on a TV, where Android counts losing HDMI as the same thing (see PlayerFactory).
+     */
+    private val pauseOnNoisyAudio: Boolean = false,
     private val httpClient: () -> OkHttpClient
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -114,6 +119,14 @@ class FluxPlayerController(
 
     private val _playerReady = MutableStateFlow(false)
     val playerReady: StateFlow<Boolean> = _playerReady.asStateFlow()
+
+    /**
+     * Android paused the channel on its own: another app took the sound for good, or, on a phone,
+     * the headphones were unplugged. Nothing resumes it by itself, so the phone layout offers Play.
+     * Cleared as soon as it plays again, including by [onResume] and a new channel.
+     */
+    private val _pausedBySystem = MutableStateFlow(false)
+    val pausedBySystem: StateFlow<Boolean> = _pausedBySystem.asStateFlow()
 
     init {
         scope.launch {
@@ -275,7 +288,7 @@ class FluxPlayerController(
 
     private fun ensurePlayer() {
         if (bundle != null) return
-        val created = PlayerFactory.create(context, maxVideoHeight, httpClient)
+        val created = PlayerFactory.create(context, maxVideoHeight, pauseOnNoisyAudio, httpClient)
         created.evenVolume.leveler.enabled = evenVolume
         created.player.addListener(playerListener)
         created.player.addAnalyticsListener(analyticsListener)
@@ -643,6 +656,13 @@ class FluxPlayerController(
     }
 
     private val playerListener = object : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            _pausedBySystem.value = !playWhenReady && (
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+                )
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_BUFFERING -> {

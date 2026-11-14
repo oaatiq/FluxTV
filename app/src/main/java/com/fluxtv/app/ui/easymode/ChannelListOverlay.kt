@@ -82,7 +82,8 @@ private object InstantBringIntoViewSpec : BringIntoViewSpec {
     }
 }
 
-private class CategoryEntry(val key: String, val name: String, val count: Int)
+/** One category of the channel list, on the TV and on a phone: its key, its name and its channel count. */
+internal class CategoryEntry(val key: String, val name: String, val count: Int)
 
 /** How long the D-pad rests on a category before its channels replace the ones on the right. */
 private const val PREVIEW_DELAY_MS = 140L

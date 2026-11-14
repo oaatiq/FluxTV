@@ -1,9 +1,14 @@
 package com.fluxtv.app
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.KeyEvent
+import android.view.OrientationEventListener
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +36,10 @@ import kotlinx.coroutines.launch
  * physical button maps to one consistent action regardless of what is focused (§7, REQ-REM-001).
  * Volume and Home are never intercepted; a long-press of OK (or the MENU button) is the deliberate,
  * non-obvious gesture into the administrator area (REQ-CFG-001).
+ *
+ * On a phone or tablet, Easy Mode is worked by touch instead: the screen turns with the phone (and
+ * goes sideways with the full-screen button), the status bar shows while it is upright, and the
+ * remote's handler keeps only the keys that mean nothing else, so a keyboard types into the search.
  */
 class MainActivity : ComponentActivity() {
 
@@ -41,19 +50,43 @@ class MainActivity : ComponentActivity() {
     private lateinit var frameRateController: FrameRateController
     private var okDownTime = 0L
 
+    /** A phone or tablet, worked by touch, rather than a TV and its remote. */
+    private val touchUi: Boolean by lazy { !(application as FluxTvApplication).container.isTelevision }
+
+    /** After the full-screen button, gives the turning back to the phone once it is held that way. */
+    private var orientationRelease: OrientationEventListener? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (touchUi) {
+            // Upright or sideways, as the phone is held (and as its rotation lock allows).
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            // The theme's full-screen flag would keep the status bar away upright, and stops the
+            // window from making room for the keyboard on older Android versions.
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            @Suppress("DEPRECATION")
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            @Suppress("DEPRECATION")
+            window.statusBarColor = Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = Color.TRANSPARENT
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
+        applySystemBars()
         frameRateController = FrameRateController(this)
         if (intent?.getBooleanExtra(BootTrace.EXTRA_FROM_BOOT, false) == true) BootTrace.markLaunchedByBoot()
         if (savedInstanceState == null) noteStartedByWakeHelper(intent)
 
-        setContent { FluxApp(viewModel, onExit = ::finishAndRemoveTask) }
+        setContent {
+            FluxApp(viewModel, touchUi, onExit = ::finishAndRemoveTask, onFullscreen = ::setFullscreen)
+        }
+
+        // A phone's screen modes are its own business (and a faster one only costs battery), so the
+        // frame rate is matched on a TV only.
+        if (touchUi) return
 
         // Match the display mode to the source frame rate when enabled (§14), once the frame rate has
         // held for a moment: many TVs go black for a second or more on each mode switch, and zapping
@@ -73,6 +106,70 @@ class MainActivity : ComponentActivity() {
                     delay(FRAME_RATE_SETTLE_MS)
                     frameRateController.apply(fps)
                 }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBars()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // A dialog or the keyboard can bring the bars back; they go again once FluxTV has the focus.
+        if (hasFocus) applySystemBars()
+    }
+
+    /**
+     * The system bars: hidden on a TV, and on a phone held sideways, where the picture takes the whole
+     * screen; shown on a phone held upright, as in any phone app. A swipe from the edge shows them for
+     * a moment while they are hidden.
+     */
+    private fun applySystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+            val upright = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+            if (touchUi && upright) show(WindowInsetsCompat.Type.systemBars())
+            else hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    /**
+     * The phone's full-screen button: sideways for the picture alone ([on]), or back upright for the
+     * channel list. The screen turns at once, whichever way the phone is held. With auto-rotate on,
+     * the phone takes over again once it is held the new way, so turning it keeps working as usual;
+     * with the rotation locked, the screen stays as the button left it.
+     */
+    private fun setFullscreen(on: Boolean) {
+        if (!touchUi) return
+        orientationRelease?.disable()
+        orientationRelease = null
+        val autoRotate = Settings.System.getInt(contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
+        if (!on && !autoRotate) {
+            // Back to the way the rotation lock holds the screen: upright, for most.
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            return
+        }
+        requestedOrientation =
+            if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+        if (!autoRotate) return
+        val listener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(degrees: Int) {
+                if (degrees == ORIENTATION_UNKNOWN) return
+                val heldSideways = degrees in 60..120 || degrees in 240..300
+                val heldUpright = degrees <= 30 || degrees >= 330 || degrees in 150..210
+                if (if (on) heldSideways else heldUpright) {
+                    disable()
+                    if (orientationRelease === this) orientationRelease = null
+                    requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+                }
+            }
+        }
+        if (listener.canDetectOrientation()) {
+            listener.enable()
+            orientationRelease = listener
         }
     }
 
@@ -116,10 +213,14 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         viewModel.onActivityStop()
+        // The sensor is not kept running off screen; the screen stays as the button left it.
+        orientationRelease?.disable()
+        orientationRelease = null
     }
 
     override fun onDestroy() {
-        frameRateController.reset()
+        orientationRelease?.disable()
+        if (!touchUi) frameRateController.reset()
         super.onDestroy()
     }
 
@@ -162,6 +263,10 @@ class MainActivity : ComponentActivity() {
             KeyEvent.KEYCODE_VOLUME_MUTE,
             KeyEvent.KEYCODE_HOME -> return false
         }
+
+        // On a phone, the screen is the remote. Digits, arrows and Enter from a keyboard (or one
+        // that sends keys) belong to the channel search; only keys that mean nothing else are kept.
+        if (touchUi && code !in TOUCH_KEYS) return false
 
         when (code) {
             KeyEvent.KEYCODE_CHANNEL_UP -> {
@@ -245,5 +350,14 @@ class MainActivity : ComponentActivity() {
     private companion object {
         /** How long a new frame rate has to hold before the display mode follows it. */
         const val FRAME_RATE_SETTLE_MS = 3_000L
+
+        /** The keys still handled here on a phone, from a remote paired with it: none of them types text. */
+        val TOUCH_KEYS = setOf(
+            KeyEvent.KEYCODE_CHANNEL_UP,
+            KeyEvent.KEYCODE_CHANNEL_DOWN,
+            KeyEvent.KEYCODE_LAST_CHANNEL,
+            KeyEvent.KEYCODE_INFO,
+            KeyEvent.KEYCODE_GUIDE
+        )
     }
 }
