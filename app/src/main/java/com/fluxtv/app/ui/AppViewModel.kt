@@ -27,6 +27,8 @@ import com.fluxtv.app.setup.AddStatus
 import com.fluxtv.app.setup.PhoneSetupServer
 import com.fluxtv.app.setup.localNetworkAddress
 import com.fluxtv.app.setup.tvDisplayName
+import com.fluxtv.app.update.InstallRoute
+import com.fluxtv.app.update.UpdateStatus
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -169,6 +171,12 @@ class AppViewModel(
     /** The programme guides the playlist in use names, for Settings to say whether it names any. */
     val playlistGuideUrls: StateFlow<List<String>> get() = container.channelRepository.guideUrls
 
+    /** FluxTV's own updates, for Settings → Updates and the "Updating FluxTV…" screen. */
+    val updates: StateFlow<UpdateStatus> get() = container.updateManager.status
+
+    /** The FluxTV running now: "1.1.64 (build 64)". */
+    val installedVersion: String get() = container.updateManager.installedLabel
+
     private var bannerJob: Job? = null
     private var guideJob: Job? = null
     private var firstLoadJob: Job? = null
@@ -219,6 +227,18 @@ class AppViewModel(
         viewModelScope.launch {
             container.playerController.playlistReloadWanted.collect { reloadPlaylistForRecovery() }
         }
+        viewModelScope.launch {
+            container.updateManager.status.map { it.updatingOnScreen }.distinctUntilChanged().collect { covering ->
+                if (!covering) return@collect
+                // "Updating FluxTV…" has taken the screen and Android is about to close FluxTV: the
+                // channel stops now instead of playing on unseen. Should the update fail, the
+                // channel is tuned again once the picture is back, as after Settings.
+                numberJob?.cancel()
+                _state.update { it.copy(overlay = EasyOverlay.NONE, numberEntry = "") }
+                if (_state.value.currentChannel != null) retuneWhenOnScreen = true
+                container.playerController.onStop()
+            }
+        }
         // The diagnostics figures and history are not copied in here: they change many times per
         // channel change, and every change would hand Easy Mode a new state for data only the
         // Diagnostics screen shows. That screen collects them from the player itself.
@@ -231,6 +251,13 @@ class AppViewModel(
         if (started) return
         started = true
         viewModelScope.launch {
+            // A FluxTV update downloaded earlier goes in first, behind "Updating FluxTV…": the TV has
+            // just been turned on, and FluxTV comes back by itself on the new version. This returns
+            // at once when there is none to install now, or when it could not be installed, and TV
+            // starts as usual (UpdateManager.installAtStart).
+            container.updateManager.installAtStart()
+            // The next look for updates, once the first channel has had its time.
+            container.updateManager.onAppStarted()
             val s = container.settingsRepository.settings.first()
             _state.update {
                 it.copy(
@@ -946,6 +973,27 @@ class AppViewModel(
     /** A programme guide link for a saved playlist; blank goes back to the ones the playlist names. */
     fun setGuideUrl(id: String, url: String) {
         viewModelScope.launch { container.settingsRepository.setGuideUrl(id, url) }
+    }
+
+    // ---------- updates (Settings → Updates) ----------
+
+    /** How this TV installs updates now; it changes as the administrator allows things. */
+    fun updateRoute(): InstallRoute = container.updateManager.route()
+
+    /** Whether FluxTV, closed by its own update while on screen, can come back by itself. */
+    fun canRelaunchAfterUpdate(): Boolean = container.updateManager.canRelaunch()
+
+    fun checkForUpdates() = container.updateManager.checkNow()
+
+    fun installUpdateNow() = container.updateManager.installNow()
+
+    fun setAutoUpdate(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setAutoUpdate(value) }
+    }
+
+    /** Blank goes back to the address FluxTV was built with. */
+    fun setUpdateUrl(value: String) {
+        viewModelScope.launch { container.settingsRepository.setUpdateUrl(value) }
     }
 
     fun refreshDiagnostics() = container.playerController.refreshDiagnostics()

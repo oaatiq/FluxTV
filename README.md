@@ -21,7 +21,7 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
   playlist downloads use
 - **DataStore** (settings/favorites) + a JSON playlist cache — no database, so config survives
   restarts and app updates with zero migration risk
-- **WorkManager** for unattended periodic playlist refresh
+- **WorkManager** for unattended periodic playlist refresh and update checks
 - **ZXing** (core only) to draw the QR code a phone scans to send a playlist to the TV
 - No Hilt/Room/KSP — a tiny manual DI container keeps the build simple and robust
 
@@ -58,6 +58,15 @@ it is installed:
 
 The release build is signed with the debug key (see `app/build.gradle.kts`), so it updates an existing
 debug install in place and keeps your settings. It is not debuggable, so `adb shell run-as` won't work on it.
+To sign with a keystore of its own instead, set `FLUXTV_KEYSTORE` (and `FLUXTV_KEYSTORE_PASSWORD`,
+`FLUXTV_KEY_ALIAS`, `FLUXTV_KEY_PASSWORD`, or the matching `-Pfluxtv.…` properties); it must hold the
+key the TVs' FluxTV is signed with, or they cannot update to it (see [Updates](#updates)).
+
+**Version numbers.** The build number (`versionCode`) is the number of commits up to the one built,
+so every later commit builds a higher one; that is how a TV knows a build is newer than its own. The
+version name is `fluxtv.versionName` in `gradle.properties` followed by it (`1.1.64`), or what
+`-PversionName=1.2.0` says. A shallow clone counts too few commits: fetch the whole history
+(`git fetch --unshallow`) before building a release. `-PversionCode=…` overrides the count.
 
 The release build also goes through R8, which shrinks and optimizes the code. Class names are left
 as they are, so crashes in `adb logcat` read the same as in a debug build. R8 removes code it cannot
@@ -429,6 +438,11 @@ Optionally protect it with a **PIN** (Preferences). Sections:
   a certificate the TV does not trust or a server name that does not resolve. *recovery* lines show
   the healing behind the error screen: each background try (with a new player and connections),
   each playlist reload it asked for, and *playing again after N background tries* once it worked.
+  The version of FluxTV running is at the top.
+- **Updates** — the version running and the newest one, what the updater is doing, **Check for
+  updates** and **Install now**, how updates install on this TV and what it still needs for that
+  (with the button to allow it), **Update FluxTV automatically** (on by default), and the update
+  address. See [Updates](#updates).
 
 ## Playlists
 
@@ -478,6 +492,173 @@ The phone page is a setup session, not a service that is always on:
   a device on the network that has not scanned the TV's screen gets nothing.
 - The link travels over the home network as plain HTTP, the way most IPTV playlists are fetched
   anyway. The page is not cached, and FluxTV logs playlist names, never links.
+
+## Updates
+
+FluxTV updates itself. Nobody in front of the TV has to do anything, and on most TVs nobody is asked
+anything either: a new version is found, downloaded and checked in the background, installed while
+nobody watches, and FluxTV comes back by itself on the new version, with its playlists, favorites,
+channel numbers and settings as they were.
+
+### How an update goes
+
+1. **Looking.** A minute and a half after FluxTV starts, and every 6 hours in the background (also
+   while the TV is in standby), FluxTV reads the `update.json` of the newest release and compares
+   the build number there with its own. By default that is
+   `https://github.com/oaatiq/FluxTV/releases/latest/download/update.json`, which GitHub always
+   serves from the newest release; **Settings → Updates → Update address** points a TV elsewhere.
+2. **Downloading.** A newer build is downloaded at once, in the background. While a channel plays,
+   the download takes at most 15% of the line (as the player measures it), so the picture never
+   stalls for it; off screen it goes at full speed. A download cut short goes on from where it
+   stopped. A phone on mobile data waits for Wi-Fi.
+3. **Checking.** The file must have the size and SHA-256 the release states, be FluxTV, be the build
+   announced and newer than the one installed, and be signed with the same key as the FluxTV on the
+   TV. It is checked again just before it is installed. A file that fails is never installed.
+4. **Installing**, at a moment nobody is watching:
+   - as soon as FluxTV is off screen: the TV in standby (the remote's power button), Home, another
+     app — the moment the update is ready, or the moment FluxTV leaves the screen;
+   - when FluxTV starts (after the TV was switched off at the plug), before the first channel;
+   - on a TV that never leaves FluxTV, in the night (3:00–5:00) once the update has waited a day, or
+     at any hour after three days.
+
+   While it installs with FluxTV on screen, a calm screen shows an arrow coming down into a tray,
+   the same slowly moving dots as everywhere else ("wait, FluxTV is on it") and *Updating FluxTV…*;
+   the keys do nothing but the volume. Some seconds later FluxTV is back, on the same channel.
+5. **Afterwards.** The new version writes `[update] Updated from 1.1.64 (build 64) to 1.2.0 (build
+   70), silently, by Android` in **Settings → Diagnostics → History**, and **Settings → Updates** and
+   **Diagnostics** show the new version.
+
+**Settings and data are kept.** Android replaces an app in place and keeps all of its data: the
+playlists, favorites, last channels and preferences (DataStore), the saved channels and programme
+guide. FluxTV only ever installs builds of itself signed with its own key, the one kind Android
+installs over it; anything else could only be installed by removing FluxTV first, which would lose
+all that, and FluxTV never does it.
+
+**A failed update changes nothing.** Android installs an update in one step or not at all: a failed
+installation leaves the FluxTV that was there, working, with everything set in it. FluxTV tries
+again later, 30 minutes, 2 hours, 6 hours and then a day after each failure. A build Android can
+never install here (signed with another key, older, made for a newer Android) is not tried again by
+itself; a newer build or **Install now** is. Each step and each failure has an `[update]` line in the
+history, also written to logcat (`adb logcat -s FluxTV:I`), so an update can be followed over adb
+while nobody can open Settings.
+
+### Silent installation: what each Android allows
+
+| Device | How updates install | What it needs, once |
+|---|---|---|
+| Any Android 7+, with [Shizuku](https://shizuku.rikka.app/) running | **Silently**, on every version: FluxTV's Shizuku helper installs it as `adb install` does, and starts FluxTV again | FluxTV allowed in Shizuku (**Settings → Updates** or **Preferences**) |
+| Android 12 and newer | **Silently**: Android installs an app's own update without asking | *Install unknown apps* allowed for FluxTV |
+| Android 8 to 11, no Shizuku | Android asks *Install / Cancel* before each installation. FluxTV shows the question when it starts, at most once a day | *Install unknown apps* allowed for FluxTV |
+| Android 7, no Shizuku | The same question | *Unknown sources* on (it is, where FluxTV was installed from a file) |
+
+Why it is so:
+
+- An ordinary app can only install apps through Android's installer, and that asks the user, with
+  one exception: since **Android 12** an app may update **itself** without a question
+  (`PackageInstaller.SessionParams.setRequireUserAction(USER_ACTION_NOT_REQUIRED)`), when it may
+  install apps at all (*Install unknown apps*), declares `UPDATE_PACKAGES_WITHOUT_USER_ACTION`, and
+  targets a recent Android: API 29 on Android 12, 30 on 13, 31 on 14, 33 on 15, **34 on 16** and 35 on
+  17. FluxTV targets 34, which is enough up to Android 16: raise `targetSdk` to 35 before TVs move to
+  Android 17. If Android asks anyway, FluxTV notices, drops that attempt (it never leaves a question
+  on screen at night or in standby) and shows the question the next time it starts.
+- The shell user, the one `adb` works as, may install apps without asking, on every version. Shizuku
+  runs FluxTV's existing helper (the one that starts FluxTV after a force-stop) as that user, so
+  where Shizuku runs, the helper installs the update and starts FluxTV again.
+- Looked at and not used: making FluxTV the device owner (silent installs, but only on a device set
+  up without any account, by `adb shell dpm set-device-owner`, and it locks the TV down); a system
+  app (only for the TV's maker); `su` on a rooted box (a root manager asks on screen and can say no).
+  On a rooted box, Shizuku can start itself with root at every boot, which gives the helper with
+  nothing more to do.
+
+**Setting a TV up, once.** By remote: **Settings → Updates** says how updates install there and, if
+something is missing, offers the button that opens Android's screen for it (*Allow FluxTV to install
+updates*, *Allow FluxTV to use Shizuku*). By adb, which also works where a TV's settings do not have
+those screens:
+
+```bash
+adb shell appops set com.fluxtv.app REQUEST_INSTALL_PACKAGES allow
+```
+
+An update installed while FluxTV is on screen closes it, and Android 10 and newer let FluxTV start
+itself again only with *Display over other apps*, the permission starting with the TV already needs
+([Start when the TV turns on](#start-when-the-tv-turns-on)); the Shizuku helper does not need it.
+Without it, updates are installed only while FluxTV is off screen, never on screen:
+
+```bash
+adb shell appops set com.fluxtv.app SYSTEM_ALERT_WINDOW allow
+```
+
+For example, a **Raspberry Pi 5 with LineageOS 23 (Android 16)** and no Shizuku: updates install
+silently by Android. Give FluxTV both permissions above once (the two `appops` commands, as
+LineageOS's TV settings may not show those screens), and **Settings → Updates** reads *Silently: this
+Android version installs FluxTV's own updates without asking anyone*.
+
+**The first version with updates is installed by hand**, with adb as before: a FluxTV from before
+cannot update itself. Earlier builds were all build 1, so this one, built on the same machine (the
+same key), installs over them as an update and keeps their settings. From then on each TV updates
+itself.
+
+### Publishing a release
+
+Every FluxTV looks at the newest release of this repository, so publishing one is all it takes:
+
+1. **Once:** add the repository secret `FLUXTV_KEYSTORE_BASE64` (Settings → Secrets and variables →
+   Actions): the keystore whose key signed the FluxTV on the TVs, base64-encoded. For TVs set up so
+   far that is the debug keystore of the machine that built their FluxTV (`base64 -w0
+   ~/.android/debug.keystore`); its password and alias are Android's defaults, which the workflow
+   uses unless the secrets `FLUXTV_KEYSTORE_PASSWORD`, `FLUXTV_KEY_ALIAS` and `FLUXTV_KEY_PASSWORD` say
+   otherwise. Android installs an update only when it is signed with the same key, so the workflow
+   stops rather than publish a build no TV could install. Optionally, the repository variable
+   `FLUXTV_CERT_SHA256` (the certificate digest `apksigner verify --print-certs` prints) makes it check
+   the exact certificate too. Keep that keystore safe and backed up: losing it means TVs can no
+   longer be updated without reinstalling FluxTV, and whoever has it can sign builds the TVs accept.
+2. **Each release:** tag a commit and push the tag:
+
+   ```bash
+   git tag v1.2.0
+   ```
+
+   ```bash
+   git push origin v1.2.0
+   ```
+
+   The *Release* workflow (`.github/workflows/release.yml`) runs the tests, builds and signs the
+   release APK, and publishes a GitHub release `v1.2.0` with `FluxTV-1.2.0.apk` and its
+   `update.json`. TVs find it within 6 hours, or at once with **Settings → Updates → Check for
+   updates**. It can also be started from the Actions tab with a version name.
+
+Without GitHub Actions, build and describe the release on the dev machine, then upload both files to
+a GitHub release named `v1.2.0` (the asset names must stay `FluxTV-1.2.0.apk` and `update.json`):
+
+```bash
+./gradlew :app:assembleRelease -PversionName=1.2.0
+```
+
+```bash
+cp app/build/outputs/apk/release/app-release.apk FluxTV-1.2.0.apk
+```
+
+```bash
+python3 tools/make_update_manifest.py FluxTV-1.2.0.apk --metadata app/build/outputs/apk/release/output-metadata.json --url https://github.com/oaatiq/FluxTV/releases/download/v1.2.0/FluxTV-1.2.0.apk
+```
+
+Any web server the TVs reach works as well: put the APK and an `update.json` made without `--url`
+(the APK is then found next to it) in one folder, and set that `update.json`'s address in
+**Settings → Updates → Update address**.
+
+### Limits
+
+- A build that crashes at start cannot be taken back by itself: Android does not let an app go back
+  to an older build without removing it, which would lose its data. Publishing a fixed build is the
+  way out; the background job that installs it runs apart from the screen, so a build whose screen
+  crashes still gets it.
+- On Android 8 to 11 without Shizuku, someone has to answer Android's question (FluxTV asks it when
+  it starts, at most once a day). Shizuku removes the question.
+- Without *Display over other apps* (and without Shizuku), Android 10+ installs updates only while
+  FluxTV is off screen, so a TV that is never put into standby nor switched off waits for the
+  administrator's **Install now**.
+- The download needs the release's address to be reachable from the TV; a private repository is
+  not. Point the update address at a web server the TVs reach instead.
 
 ## Acceptance testing
 
@@ -563,6 +744,27 @@ playlist URL can carry credentials.
 Devices: Xiaomi MiTV (MStar, Android 9) and MINIX NEO U8K-ULTRA (Amlogic S928X-K, Android 11 AOSP —
 the Android version that needs the permission above).
 
+**Updates.** Install a build numbered below the next release (for a test, `./gradlew
+:app:assembleRelease -PversionCode=60`), publish a release (or serve one from the dev machine: run
+`tools/make_update_manifest.py` on a higher-numbered APK without `--url`, then `python3 -m http.server`
+in its folder, and set `http://<computer>:8000/update.json` as the update address), and open
+**Settings → Updates**:
+
+1. *A newer build is found:* **Check for updates** shows it as *Newest*.
+2. *It downloads by itself:* the screen counts the download up, then says it is downloaded and
+   checked; the history has `Found…`, `Downloading…` and `…downloaded and checked`. Cut the network
+   during the download and bring it back: it goes on from where it stopped.
+3. *It installs as silently as the TV allows:* **Settings → Updates** says how. Put the TV into
+   standby with the remote: the history (or `adb logcat -s FluxTV:I`) shows `Installing…`, and the
+   installation happens with nobody asked (Shizuku or Android 12+). Or switch the TV off at the
+   plug and on: *Updating FluxTV…*, then FluxTV comes back by itself on its channel.
+4. *Data is kept:* the playlists, favorites, channel numbers, text size and PIN are as before.
+5. *A failed update leaves FluxTV working:* publish a build signed with another key: it is refused
+   before installing (*not signed with this FluxTV's key*), never tried again by itself, and FluxTV
+   plays on. An `update.json` with a wrong SHA-256: *damaged*, fetched again later.
+6. *The new version is reported:* **Settings → Updates** and **Diagnostics** show the new version,
+   and the history has `Updated from … to …`.
+
 **Phone.** Install on a phone and open FluxTV: it opens on the phone layout, never the TV's. Upright,
 tap channels in the list, swipe up and down on the picture, and press and hold a channel to make it a
 favorite (the message says so, and Favorites lists it). Type part of a name in *Find a channel*. Turn
@@ -584,9 +786,12 @@ app/src/main/java/com/fluxtv/app/
 │  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock,
 │  │                StreamNotices for every streaming problem); TouchEasyModeScreen is the phone and
 │  │                tablet layout
-│  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics
+│  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics /
+│  │                updates
 │  ├─ components/   large-type, high-contrast, focusable TV widgets
 │  └─ AppViewModel  the Easy Mode state machine (STARTING → WATCHING ⇄ CHANNEL LIST)
+├─ update/          FluxTV's own updates: release description, download, checks, when and how to
+│                   install (Shizuku helper or Android's installer), the background job
 ├─ work/            WorkManager periodic refresh
 ├─ DeviceKind       TV or phone/tablet, which decides the layout and whether FluxTV starts by itself
 └─ MainActivity     central remote-key handling + fullscreen + frame-rate matching; orientation and

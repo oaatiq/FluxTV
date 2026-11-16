@@ -3,7 +3,8 @@
 How each requirement in the *FluxTV: Basic Product & System Requirements Specification* (plus the
 added **Hardware resource utilization**, **Smartphone playlist setup**, **Multiple-playlist
 management**, **Programme guide, clock, text size and even volume**, **Phones and tablets** and
-**Visual feedback for streaming problems** sections) is met in this implementation.
+**Visual feedback for streaming problems** and **Automatic updates** sections) is met in this
+implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
@@ -289,6 +290,67 @@ management**, **Programme guide, clock, text size and even volume**, **Phones an
   no longer show the waiting dots.
 - **Acceptance test** — README → Acceptance testing → *Every streaming problem on screen*.
 
+## Automatic updates (added section)
+- **Looks for a newer build at start-up and periodically** — `update/UpdateManager.onAppStarted`
+  (90 s after the start, once the first channel has had its turn; looks closer than 30 min apart are
+  skipped) and `update/UpdateWorker` (WorkManager, every 6 h, network required, also in standby).
+  The release is described by an `update.json` (`update/UpdateInfo.kt`, `UpdateManifest.parse`),
+  by default the newest GitHub release's (`BuildConfig.UPDATE_URL`), or the address in Settings →
+  Updates (`FluxSettings.updateUrl`).
+- **Compares versions** — the release's `versionCode` against `BuildConfig.VERSION_CODE`, which the
+  build sets to the commit count (`app/build.gradle.kts`), so every later commit is a later build.
+- **Downloads by itself in the background** — `update/UpdateDownloader.kt`: resumes with HTTP Range,
+  checks free space, refuses more than the announced size, and keeps to 15% of the line the player
+  measures while a channel plays (`UpdateManager.allowedBytesPerSecond`), full speed off screen. A
+  phone on mobile data waits for Wi-Fi. Settings → Updates → *Update FluxTV automatically* (on by
+  default, `FluxSettings.autoUpdate`) turns automatic downloads and installations off.
+- **Silent installation, investigated and implemented where the platform allows** —
+  `update/InstallRoute`: the Shizuku helper (`WakeDaemon` `TX_INSTALL_*`, `ShizukuWake.install`:
+  the shell user's `pm install -r`, any Android version, then `am start`); Android 12+'s silent
+  self-update (`update/SessionInstall.kt`, `USER_ACTION_NOT_REQUIRED`, with
+  `REQUEST_INSTALL_PACKAGES` and `UPDATE_PACKAGES_WITHOUT_USER_ACTION` in the manifest and a target
+  SDK recent enough, `UpdateManager.targetNeededForSilentUpdates`); else Android's question, the least
+  intrusive flow the platform permits, shown only when FluxTV starts and at most once a day
+  (`UpdatePolicy`). The platform matrix and what was ruled out (device owner, system app, `su`) are in
+  README → Updates.
+- **Least intrusive moment** — `update/UpdatePolicy.kt`: as soon as FluxTV is off screen (standby:
+  `StandbyWatcher` screen-off, `MainActivity.onStop` → `UpdateManager.onLeftScreen`, kept awake by a
+  wake lock meanwhile); at the start, before the first channel (`AppViewModel.start` →
+  `installAtStart`); at night on a TV never left (after 24 h waiting, 3:00–5:00, or after 72 h). An
+  installation on screen shows `ui/startup/UpdatingScreen.kt` (arrow into a tray, the waiting dots,
+  *Updating FluxTV…*), stops the channel, ignores keys but volume, and happens only where FluxTV can
+  come back by itself (`UpdateManager.canRelaunch`). Android's question is never shown at night or
+  in standby.
+- **Integrity verified before installation** — `update/ApkVerifier.kt`, after the download and again
+  just before installing: size and SHA-256 as the release states, an Android app, package
+  `com.fluxtv.app`, the announced build, newer than the one installed, signed with the installed
+  FluxTV's key (rotation history accepted). The Shizuku helper checks size and SHA-256 again on its
+  side before `pm` sees the file.
+- **Settings and data preserved** — Android's in-place update keeps the app's data (DataStore,
+  playlist and guide caches, REQ-UPD-001/002); only builds signed with FluxTV's own key are ever
+  installed, never anything that would need FluxTV removed first.
+- **Graceful restart** — the Shizuku helper starts FluxTV again after `pm` succeeds
+  (`EXTRA_RELAUNCHED_AFTER_UPDATE`); otherwise `update/UpdateReceiver` (MY_PACKAGE_REPLACED) →
+  `UpdateManager.afterPackageReplaced` starts it if it was on screen when the update began
+  (`InstallAttempt.relaunch`). The same broadcast restarts FluxTV's process after an update in
+  standby, so the wake still brings it on screen.
+- **A failed update leaves FluxTV working, with a safe retry** — Android installs atomically, so
+  the installed build stays as it was; `UpdatePolicy.retryDelayMs` (30 min, 2 h, 6 h, then daily)
+  per build; builds Android can never install here (`UpdatePolicy.isPermanent`: another key, a
+  downgrade, a newer Android) are not retried by themselves; an installation that never reported
+  back counts as failed at the next start (`UpdateManager.noteVersion`). Settings → Updates →
+  *Install now* retries at once.
+- **Reports the new version** — `UpdateManager.noteVersion` compares the build that ran last
+  (`UpdateRecord.lastRunVersionCode`) with the one running and writes `[update] Updated from … to …`
+  (or *installed from outside FluxTV*); Settings → Updates and Diagnostics show the running version.
+  Every step is an `[update]` history line, mirrored to logcat (`DiagnosticsStore.LOGCAT_CATEGORIES`).
+- **Publishing** — `.github/workflows/release.yml` (tag `v*`): tests, a release build signed with the
+  TVs' key (`FLUXTV_KEYSTORE_BASE64`; it stops without one), an optional certificate check, and a
+  GitHub release with the APK and the `update.json` written by `tools/make_update_manifest.py`.
+- **Tests** — `app/src/test/…/update/`: the manifest, the policy, and the downloader against a local
+  server (resume, damaged file, oversize, throttling).
+- **Acceptance test** — README → Acceptance testing → *Updates*.
+
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
   type with no player module (RTSP, Smooth Streaming) reads "Unable to play this channel" instead of
@@ -377,12 +439,16 @@ management**, **Programme guide, clock, text size and even volume**, **Phones an
 - **REQ-CFG-001..005** — admin behind ⚙ in the channel list / hold-OK / MENU and optional PIN; no
   config needed for daily use.
 - **REQ-UPD-001..003** — DataStore + JSON cache survive updates; stable IDs absorb playlist changes.
+  FluxTV now also updates itself: see *Automatic updates* above.
 - **REQ-SEC-001..005** — credentials never shown to the Viewer, nor written to the diagnostics
   history; the phone setup page answers only during a setup session and only under its random code;
   minimal permissions (INTERNET,
   ACCESS_NETWORK_STATE, WAKE_LOCK, RECEIVE_BOOT_COMPLETED, and SYSTEM_ALERT_WINDOW purely as the
   platform's exemption for opening itself when the TV turns on — never used to draw an overlay, and
-  off until an administrator grants it); no analytics/telemetry.
+  off until an administrator grants it; REQUEST_INSTALL_PACKAGES and
+  UPDATE_PACKAGES_WITHOUT_USER_ACTION only to install FluxTV's own verified updates, the former off
+  until an administrator allows it); no analytics/telemetry. Update checks send only a User-Agent
+  with FluxTV's version.
 
 ## 25. Easy Mode state model
 - `AppViewModel` implements `STARTING → WATCHING ⇄ CHANNEL LIST` with `recovery → WATCHING`.

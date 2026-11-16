@@ -45,7 +45,11 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
         override fun onReceive(context: Context, intent: Intent) {
             val action = intent.action ?: return
             when (action) {
-                Intent.ACTION_SCREEN_OFF -> record("Screen off")
+                Intent.ACTION_SCREEN_OFF -> {
+                    record("Screen off")
+                    // Standby is when nobody watches: the moment for an update that was waiting.
+                    container.updateManager.onLeftScreen()
+                }
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> onWake(action)
             }
         }

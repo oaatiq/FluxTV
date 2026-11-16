@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fluxtv.app.BuildConfig
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
@@ -74,6 +75,10 @@ import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
 import com.fluxtv.app.ui.theme.FluxSurface
 import com.fluxtv.app.ui.theme.LocalTouchUi
+import com.fluxtv.app.update.InstallRoute
+import com.fluxtv.app.update.UpdatePhase
+import com.fluxtv.app.update.UpdateStatus
+import com.fluxtv.app.update.openInstallPermission
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -82,7 +87,7 @@ import java.util.Locale
 
 /** [PLAYLIST] is one saved playlist; it, [ADD_BY_PHONE] and [ADD_BY_TYPING] open from [PLAYLISTS]. */
 private enum class AdminSection {
-    MENU, PLAYLISTS, PLAYLIST, ADD_BY_PHONE, ADD_BY_TYPING, CHANNELS, PREFERENCES, DIAGNOSTICS
+    MENU, PLAYLISTS, PLAYLIST, ADD_BY_PHONE, ADD_BY_TYPING, CHANNELS, PREFERENCES, DIAGNOSTICS, UPDATES
 }
 
 /**
@@ -152,6 +157,7 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
                 AdminSection.CHANNELS -> ChannelsSection(state, vm)
                 AdminSection.PREFERENCES -> PreferencesSection(state, vm)
                 AdminSection.DIAGNOSTICS -> DiagnosticsSection(state, vm)
+                AdminSection.UPDATES -> UpdatesSection(state, vm)
             }
         }
     }
@@ -210,8 +216,11 @@ private fun AdminMenu(
         FluxButton("Playlists", Modifier.formWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
         FluxButton("Channels & favorites", Modifier.formWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
         FluxButton("Preferences", Modifier.formWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
-        FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
-        // Side by side so the menu keeps its five rows and still fits a 720p screen.
+        // Side by side, as the two below, so the menu keeps its five rows and still fits a 720p screen.
+        Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FluxButton("Diagnostics", Modifier.weight(1f)) { onSelect(AdminSection.DIAGNOSTICS) }
+            FluxButton("Updates", Modifier.weight(1f)) { onSelect(AdminSection.UPDATES) }
+        }
         Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
             FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
@@ -856,6 +865,7 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
 
         item {
             Column(Modifier.padding(bottom = 12.dp)) {
+                InfoRow("FluxTV version", vm.installedVersion)
                 InfoRow("Channel", d.channelName ?: "—")
                 reachability?.let { InfoRow("Reachability", it) }
                 InfoRow("Decoding", decodeLabel(d))
@@ -892,6 +902,160 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
             }
         }
     }
+}
+
+/**
+ * Settings → Updates: the version running and the newest one, how this TV installs updates and what
+ * it still needs for that, and the switch and address behind it all. Nothing here is needed for
+ * updates to happen: it is where an administrator sees that they do, and why not if they do not.
+ */
+@Composable
+private fun UpdatesSection(state: UiState, vm: AppViewModel) {
+    val context = LocalContext.current
+    val updates by vm.updates.collectAsStateWithLifecycle()
+    var route by remember { mutableStateOf(vm.updateRoute()) }
+    var canRelaunch by remember { mutableStateOf(vm.canRelaunchAfterUpdate()) }
+    var address by remember { mutableStateOf(state.settings.updateUrl) }
+    val first = remember { FocusRequester() }
+    val touch = LocalTouchUi.current
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
+    // What decides the way updates install changes in Android's own screens, which say nothing back.
+    LaunchedEffect(Unit) {
+        while (true) {
+            route = vm.updateRoute()
+            canRelaunch = vm.canRelaunchAfterUpdate()
+            delay(1_000)
+        }
+    }
+    val device = if (touch) "device" else "TV"
+
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        SectionTitle("Updates")
+        Column(Modifier.formWidth(0.7f)) {
+            InfoRow("This FluxTV", vm.installedVersion)
+            InfoRow(
+                "Newest",
+                updates.latest?.label ?: if (updates.phase == UpdatePhase.UP_TO_DATE) "The same" else "—"
+            )
+            InfoRow("Last looked", if (updates.lastCheckMs > 0) formatTime(updates.lastCheckMs) else "Not yet")
+        }
+        BasicText(
+            updateStatusText(updates, route, state.settings.autoUpdate),
+            style = TextStyle(color = FluxOnSurface, fontSize = 20.sp)
+        )
+        updates.problem?.let { problem ->
+            val retry = if (!updates.blocked && updates.nextTryMs > System.currentTimeMillis()) {
+                " Next try: ${formatTime(updates.nextTryMs)}."
+            } else {
+                ""
+            }
+            BasicText("$problem.$retry", style = TextStyle(color = FluxMuted, fontSize = 17.sp))
+        }
+        ButtonRow {
+            FluxButton("Check for updates", focusRequester = first) { vm.checkForUpdates() }
+            val busy = updates.phase == UpdatePhase.DOWNLOADING || updates.phase == UpdatePhase.INSTALLING ||
+                updates.phase == UpdatePhase.CHECKING
+            if (updates.latest != null && !busy) FluxButton("Install now") { vm.installUpdateNow() }
+        }
+
+        FluxToggleRow(
+            "Update FluxTV automatically",
+            state.settings.autoUpdate,
+            Modifier.formWidth(0.7f)
+        ) { vm.setAutoUpdate(it) }
+        BasicText(
+            "New versions are downloaded in the background and installed when nobody is watching: in " +
+                "standby, or when FluxTV starts. Settings and channels are kept. Off: FluxTV still looks, " +
+                "and Install now installs.",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
+
+        BasicText("How updates install on this $device", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText(routeText(route, device), style = TextStyle(color = FluxOnSurface, fontSize = 18.sp))
+        if (route == InstallRoute.NOT_ALLOWED) {
+            FluxButton("Allow FluxTV to install updates") { openInstallPermission(context) }
+        }
+        if (!touch) {
+            // Shizuku is the quiet way on every Android version: say so where it runs and is not allowed.
+            val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
+            val shizukuState by shizuku.state.collectAsState()
+            if (shizukuState == ShizukuWake.State.NEEDS_PERMISSION) {
+                BasicText(
+                    "Shizuku is running on this TV. Allow FluxTV to use it and updates install without " +
+                        "any question, on any Android version.",
+                    style = TextStyle(color = FluxMuted, fontSize = 17.sp)
+                )
+                FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
+            }
+            if ((route == InstallRoute.SILENT || route == InstallRoute.HELPER) && !canRelaunch) {
+                BasicText(
+                    "To come back by itself after an update installed while it is on screen, FluxTV needs " +
+                        "\"Display over other apps\". Until then, updates are installed only while FluxTV is " +
+                        "off screen (standby).",
+                    style = TextStyle(color = FluxMuted, fontSize = 17.sp)
+                )
+                FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
+            }
+        }
+
+        BasicText("Update address", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText(
+            "Where FluxTV looks for new versions: the update.json of a release. Empty: ${BuildConfig.UPDATE_URL}",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
+        FluxTextField(
+            label = "update.json address",
+            value = address,
+            onValueChange = { address = it.take(500) },
+            modifier = Modifier.formWidth(0.7f),
+            placeholder = "Default address",
+            keyboardType = KeyboardType.Uri
+        )
+        ButtonRow {
+            FluxButton("Save address") { vm.setUpdateUrl(address) }
+            FluxButton("Use the default") { address = ""; vm.setUpdateUrl("") }
+        }
+    }
+}
+
+private fun updateStatusText(u: UpdateStatus, route: InstallRoute, automatic: Boolean): String = when (u.phase) {
+    UpdatePhase.IDLE -> "FluxTV has not looked for updates yet."
+    UpdatePhase.CHECKING -> "Looking for updates…"
+    UpdatePhase.UP_TO_DATE -> "FluxTV is up to date."
+    UpdatePhase.AVAILABLE -> when {
+        u.blocked -> "A new version is available, but it cannot be installed on this TV."
+        automatic -> "A new version is available. It is downloaded by itself."
+        else -> "A new version is available. Install now downloads and installs it."
+    }
+    UpdatePhase.DOWNLOADING -> {
+        val percent = if (u.totalBytes > 0) " ${u.downloadedBytes * 100 / u.totalBytes}%" else ""
+        "Downloading the new version…$percent"
+    }
+    UpdatePhase.READY -> "The new version is downloaded and checked. " + when {
+        u.blocked -> "It cannot be installed on this TV."
+        !automatic -> "Install now installs it."
+        route == InstallRoute.HELPER || route == InstallRoute.SILENT ->
+            "It installs by itself when FluxTV is next off screen (standby) or starts."
+        route == InstallRoute.CONFIRM -> "Android asks about it when FluxTV next starts: choose Install."
+        else -> "It installs once FluxTV is allowed to (below)."
+    }
+    UpdatePhase.INSTALLING -> "Installing the new version…"
+}
+
+private fun routeText(route: InstallRoute, device: String): String = when (route) {
+    InstallRoute.HELPER ->
+        "Silently, through the Shizuku helper: nothing to answer, and FluxTV comes back by itself."
+    InstallRoute.SILENT ->
+        "Silently: this Android version installs FluxTV's own updates without asking anyone."
+    InstallRoute.CONFIRM ->
+        "Android asks before each installation on this $device. FluxTV shows the question when it starts, " +
+            "at most once a day: choose Install. With Shizuku running on a TV, nothing is asked."
+    InstallRoute.NOT_ALLOWED ->
+        "FluxTV is not allowed to install apps yet. Choose FluxTV on the next screen and allow it; this is " +
+            "needed once."
 }
 
 private fun decodeLabel(d: DiagnosticsSnapshot): String {

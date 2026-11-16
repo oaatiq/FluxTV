@@ -14,6 +14,14 @@
         and FluxTV never draws an overlay.
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!--
+        Installing FluxTV's own updates (Settings → Updates), and nothing else: FluxTV only ever
+        installs a newer build of itself, signed with its own key. Android 8+ still asks the
+        administrator once to allow it ("Install unknown apps"). The second permission is what lets
+        Android 12+ install such an update without asking anyone each time.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <!--
         Made for TV, and it runs on phones and tablets too, worked by touch there (neither feature
@@ -75,6 +83,19 @@
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            FluxTV's own updates: how an installation went (Android answers through it), and the
+            first moment of the new version, which records the update and brings FluxTV back on
+            screen if it was there when the update began. Only Android and FluxTV itself reach it.
+        -->
+        <receiver
+            android:name=".update.UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

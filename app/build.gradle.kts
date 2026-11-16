@@ -5,6 +5,48 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+/** A Gradle property (`-Pname=…`, or gradle.properties) or else an environment variable, if either is set. */
+fun setting(property: String, environment: String): String? =
+    (providers.gradleProperty(property).orNull ?: providers.environmentVariable(environment).orNull)
+        ?.trim()?.takeIf { it.isNotEmpty() }
+
+/**
+ * The number of commits up to this one. Each commit on main adds one, so a later build always has a
+ * larger version code than an earlier one, which is how a TV tells that a build is newer than its own
+ * (Settings → Updates) and what Android requires of an update. Null where git cannot say (a source
+ * archive, or a shallow clone, whose count is far too low: fetch the whole history to build a release).
+ */
+fun commitCount(): Int? = try {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull()
+} catch (_: Exception) {
+    null
+}
+
+// -PversionCode / FLUXTV_VERSION_CODE come first, so a release can be numbered by hand if ever needed.
+val fluxVersionCode: Int = setting("versionCode", "FLUXTV_VERSION_CODE")?.toIntOrNull() ?: commitCount() ?: 1
+val fluxVersionName: String = setting("versionName", "FLUXTV_VERSION_NAME")
+    ?: "${providers.gradleProperty("fluxtv.versionName").orNull ?: "1.0"}.$fluxVersionCode"
+
+/**
+ * Where FluxTV looks for a newer build: a small JSON file describing the latest release (see
+ * tools/make_update_manifest.py). GitHub always serves the newest release's copy at this address.
+ * Settings → Updates can point a TV elsewhere.
+ */
+val fluxUpdateUrl: String = setting("fluxtv.updateUrl", "FLUXTV_UPDATE_URL")
+    ?: "https://github.com/oaatiq/FluxTV/releases/latest/download/update.json"
+
+/**
+ * The key releases are signed with. Android installs an update only when it is signed with the same
+ * key as the FluxTV already on the TV, so every build meant to update TVs must use the key their
+ * FluxTV was signed with: for TVs set up so far, the debug key of the machine that built it
+ * (~/.android/debug.keystore, whose password and alias are the defaults below). Without a keystore
+ * set, release builds keep using this machine's debug key, as before.
+ */
+val releaseKeystore: String? = setting("fluxtv.keystore", "FLUXTV_KEYSTORE")
+
 android {
     namespace = "com.fluxtv.app"
     compileSdk = 35
@@ -12,9 +54,30 @@ android {
     defaultConfig {
         applicationId = "com.fluxtv.app"
         minSdk = 24
+        // Android 12 and newer install an app's own update without asking only while it targets a
+        // recent version (two below the Android on the TV: 34 is enough up to Android 16, Android
+        // 17 needs 35): keep this up to date, or updates there ask for a confirmation again
+        // (README → Updates).
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = fluxVersionCode
+        versionName = fluxVersionName
+        buildConfigField("String", "UPDATE_URL", "\"$fluxUpdateUrl\"")
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = setting("fluxtv.keystorePassword", "FLUXTV_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias = setting("fluxtv.keyAlias", "FLUXTV_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = setting("fluxtv.keyPassword", "FLUXTV_KEY_PASSWORD") ?: storePassword
+            }
+        }
+    }
+
+    testOptions {
+        // The update logic's tests run on the build machine; Android calls there return defaults.
+        unitTests.isReturnDefaultValues = true
     }
 
     buildTypes {
@@ -25,8 +88,8 @@ android {
             // Sideloaded personal build: signed with the debug key so `assembleRelease` produces an APK
             // that updates an existing debug install in place (keeps settings). Release is about 40%
             // faster to draw than debug on the MiTV and is compiled ahead of time when installed.
-            // Use a real keystore here before publishing anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            // A keystore set as above (FLUXTV_KEYSTORE) signs it instead; it must hold the same key.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             // R8 shrinks and optimizes the release build; Compose expects it in a release build and is
             // slower without it. proguard-rules.pro keeps what Android or Shizuku create by name.
             // Test a release build on the TV after changing those rules (see README → Build).
@@ -103,4 +166,7 @@ dependencies {
     implementation(libs.zxing.core)
 
     debugImplementation(libs.androidx.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
 }

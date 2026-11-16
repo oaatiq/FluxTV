@@ -68,6 +68,8 @@ private object Keys {
     val TEXT_SIZE = intPreferencesKey("text_size_percent")
     val EVEN_VOLUME = booleanPreferencesKey("even_volume")
     val PROGRAMME_IN_LIST = booleanPreferencesKey("programme_in_list")
+    val AUTO_UPDATE = booleanPreferencesKey("auto_update")
+    val UPDATE_URL = stringPreferencesKey("update_url")
 }
 
 /** Where versions before multiple playlists kept their one playlist; read once by [SinglePlaylistMigration]. */
@@ -164,7 +166,11 @@ data class FluxSettings(
     /** Whether quiet channels are brought up and loud ones down to one volume. */
     val evenVolume: Boolean = true,
     /** Whether the channel list shows what is on now beside each name, when the guide has it. */
-    val programmeInList: Boolean = true
+    val programmeInList: Boolean = true,
+    /** Whether a newer FluxTV is downloaded and installed by itself (Settings → Updates). */
+    val autoUpdate: Boolean = true,
+    /** Where FluxTV looks for a newer build; blank for the address it was built with. */
+    val updateUrl: String = ""
 ) {
     /** The User-Agent for the playlists and for channels whose playlist entry names none. */
     val effectiveUserAgent: String get() = headerValue(userAgent).ifBlank { DEFAULT_USER_AGENT }
@@ -210,7 +216,9 @@ class SettingsRepository(private val context: Context) {
             userAgent = p[Keys.USER_AGENT] ?: "",
             textSizePercent = p[Keys.TEXT_SIZE]?.takeIf { it in TEXT_SIZES } ?: TEXT_SIZE_NORMAL,
             evenVolume = p[Keys.EVEN_VOLUME] ?: true,
-            programmeInList = p[Keys.PROGRAMME_IN_LIST] ?: true
+            programmeInList = p[Keys.PROGRAMME_IN_LIST] ?: true,
+            autoUpdate = p[Keys.AUTO_UPDATE] ?: true,
+            updateUrl = p[Keys.UPDATE_URL] ?: ""
         )
     }
 
@@ -303,6 +311,15 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setProgrammeInList(value: Boolean) {
         context.dataStore.edit { it[Keys.PROGRAMME_IN_LIST] = value }
+    }
+
+    suspend fun setAutoUpdate(value: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_UPDATE] = value }
+    }
+
+    /** Blank goes back to the address FluxTV was built with. */
+    suspend fun setUpdateUrl(value: String) {
+        context.dataStore.edit { it[Keys.UPDATE_URL] = value.trim() }
     }
 
     private companion object {

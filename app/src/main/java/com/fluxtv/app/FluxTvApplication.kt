@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import com.fluxtv.app.update.UpdateWorker
 import com.fluxtv.app.work.PlaylistRefreshWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,10 @@ class FluxTvApplication : Application() {
         standbyWatcher = StandbyWatcher(this, container).also { if (television) it.register() }
         // With Shizuku on the TV, a helper that outlives a force-stop of FluxTV starts it on a wake.
         shizukuWake = ShizukuWake(this, container).also { if (television) it.register() }
+        // The same helper installs FluxTV's updates without a question, on a TV that has it.
+        if (television) container.updateManager.helper = shizukuWake
+        // Unattended updates: a look every 6 hours, downloads and installations at quiet moments.
+        appScope.launch { UpdateWorker.schedule(this@FluxTvApplication) }
         // Periodic, unattended playlist refresh (REQ-PL-004), at the interval chosen in Preferences.
         // Scheduling it with the 12 h default here, on every start, overwrote that choice.
         appScope.launch {

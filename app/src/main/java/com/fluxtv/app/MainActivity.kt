@@ -183,15 +183,22 @@ class MainActivity : ComponentActivity() {
         noteStartedByWakeHelper(intent)
     }
 
-    // The Shizuku helper starts FluxTV when the TV wakes and FluxTV has no process; the Diagnostics
-    // history is where an administrator checks that it did.
+    // The Shizuku helper starts FluxTV when the TV wakes and FluxTV has no process, and after an
+    // update it installed while FluxTV was on screen; the Diagnostics history is where an
+    // administrator checks that it did.
     private fun noteStartedByWakeHelper(intent: Intent?) {
-        if (intent?.getBooleanExtra(WakeDaemon.EXTRA_STARTED_BY_HELPER, false) != true) return
+        val event = when {
+            intent?.getBooleanExtra(WakeDaemon.EXTRA_STARTED_BY_HELPER, false) == true -> DiagnosticsEvent(
+                System.currentTimeMillis(), null, "wake",
+                "The TV woke while FluxTV was not running: the Shizuku helper started it"
+            )
+            intent?.getBooleanExtra(WakeDaemon.EXTRA_RELAUNCHED_AFTER_UPDATE, false) == true -> DiagnosticsEvent(
+                System.currentTimeMillis(), null, "update",
+                "The Shizuku helper started FluxTV again on the new version"
+            )
+            else -> return
+        }
         val store = (application as FluxTvApplication).container.diagnosticsStore
-        val event = DiagnosticsEvent(
-            System.currentTimeMillis(), null, "wake",
-            "The TV woke while FluxTV was not running: the Shizuku helper started it"
-        )
         lifecycleScope.launch(Dispatchers.IO) { store.append(event) }
     }
 
@@ -216,6 +223,8 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         viewModel.onActivityStop()
+        // Off screen is when an update that was waiting can go in without anyone seeing it.
+        (application as FluxTvApplication).container.updateManager.onLeftScreen()
         // The sensor is not kept running off screen; the screen stays as the button left it.
         orientationRelease?.disable()
         orientationRelease = null
@@ -252,10 +261,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleRemoteKey(event: KeyEvent): Boolean {
         val state = viewModel.uiState.value
+        val code = event.keyCode
+        // "Updating FluxTV…": FluxTV closes and comes back by itself in a moment. A key now would only
+        // tune a channel behind that screen, or Back leave FluxTV; the volume still works.
+        if (viewModel.updates.value.updatingOnScreen) {
+            return code != KeyEvent.KEYCODE_VOLUME_UP && code != KeyEvent.KEYCODE_VOLUME_DOWN &&
+                code != KeyEvent.KEYCODE_VOLUME_MUTE
+        }
         // In STARTING / ADMIN, let Compose handle focus navigation and Back.
         if (state.mode != AppMode.EASY) return false
 
-        val code = event.keyCode
         val firstDown = event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0
         val up = event.action == KeyEvent.ACTION_UP
 

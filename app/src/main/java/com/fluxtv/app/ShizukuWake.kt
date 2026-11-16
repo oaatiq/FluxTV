@@ -14,9 +14,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
+import java.io.File
 
 /**
  * Where FluxTV uses Shizuku, when the TV has it, to start itself after a force-stop.
@@ -26,6 +29,8 @@ import rikka.shizuku.Shizuku
  * is not FluxTV's, so with Shizuku's permission this starts [WakeDaemon] in one of Shizuku's own
  * (daemon mode: it runs until Shizuku stops, not until FluxTV does) and tells it whether "Start
  * FluxTV when the TV turns on" is on.
+ *
+ * The same helper installs FluxTV's updates without asking anyone, on any Android version ([install]).
  *
  * Everything here is best effort and quiet: without Shizuku, or without its permission, FluxTV
  * behaves as before and Settings → Preferences says what is missing. Shizuku starts the helper
@@ -92,6 +97,90 @@ class ShizukuWake(context: Context, private val container: AppContainer) {
                 startOnWake = it
                 pushPreference()
             }
+        }
+    }
+
+    /** What came of handing an update to the helper. */
+    sealed class HelperInstall {
+        /** Android installed it (FluxTV is normally closed before this can be seen). */
+        data object Installed : HelperInstall()
+
+        /** No helper, or one from before it could install: another way has to be used. */
+        data object Unavailable : HelperInstall()
+
+        /** [message]: what `pm` (or the helper) said. */
+        data class Failed(val message: String) : HelperInstall()
+    }
+
+    /** Whether Shizuku itself is running on this TV, whatever FluxTV may do with it. */
+    fun shizukuRunning(): Boolean = try {
+        Shizuku.pingBinder() && !Shizuku.isPreV11()
+    } catch (_: Throwable) {
+        false
+    }
+
+    /**
+     * Waits a little for the helper when Shizuku runs and FluxTV may use it, as it is started
+     * anew with each start of FluxTV's process: an update found ready at the start would otherwise
+     * take another way, or none. True once the helper is there.
+     */
+    suspend fun awaitHelper(timeoutMs: Long): Boolean {
+        if (state.value == State.ACTIVE) return true
+        if (!shizukuRunning()) return false
+        val granted = try {
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) {
+            false
+        }
+        if (!granted) return false
+        return withTimeoutOrNull(timeoutMs) { state.first { it == State.ACTIVE } } != null
+    }
+
+    /**
+     * Has the helper install [apk] (already checked by FluxTV, with this [sha256]) over FluxTV, and
+     * start FluxTV again afterwards if [relaunch]. Blocks until `pm` has answered, which on success
+     * is never seen here: Android closes FluxTV to replace it. Called off the main thread.
+     */
+    fun install(apk: File, sha256: String, relaunch: Boolean): HelperInstall {
+        val binder = helper ?: return HelperInstall.Unavailable
+        return try {
+            val begin = call(binder, WakeDaemon.TX_INSTALL_BEGIN) {
+                writeLong(apk.length())
+                writeString(sha256)
+            } ?: return HelperInstall.Unavailable
+            if (!begin.first) return HelperInstall.Failed(begin.second)
+            apk.inputStream().use { input ->
+                val buffer = ByteArray(INSTALL_CHUNK_BYTES)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    val sent = call(binder, WakeDaemon.TX_INSTALL_WRITE) { writeByteArray(buffer, 0, n) }
+                        ?: return HelperInstall.Unavailable
+                    if (!sent.first) return HelperInstall.Failed(sent.second)
+                }
+            }
+            val done = call(binder, WakeDaemon.TX_INSTALL_FINISH) { writeInt(if (relaunch) 1 else 0) }
+                ?: return HelperInstall.Unavailable
+            if (done.first) HelperInstall.Installed else HelperInstall.Failed(done.second)
+        } catch (e: Exception) {
+            // Includes the helper going away (DeadObjectException) and a file that cannot be read.
+            HelperInstall.Failed("The Shizuku helper could not install it: ${e.javaClass.simpleName} ${e.message ?: ""}".trim())
+        }
+    }
+
+    /** One call to the helper: whether it went well and what it said, or null if it does not know the call. */
+    private inline fun call(binder: IBinder, code: Int, write: Parcel.() -> Unit): Pair<Boolean, String>? {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.write()
+            if (!binder.transact(code, data, reply, 0)) return null
+            reply.readException()
+            val ok = reply.readInt() == 1
+            return ok to reply.readString().orEmpty()
+        } finally {
+            data.recycle()
+            reply.recycle()
         }
     }
 
@@ -166,5 +255,8 @@ class ShizukuWake(context: Context, private val container: AppContainer) {
 
     private companion object {
         const val REQUEST_CODE = 4801
+
+        /** Well under the 1 MB a process has for all of its binder calls at once. */
+        const val INSTALL_CHUNK_BYTES = 128 * 1024
     }
 }

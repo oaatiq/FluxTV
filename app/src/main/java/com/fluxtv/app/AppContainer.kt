@@ -10,6 +10,7 @@ import com.fluxtv.app.data.repository.ChannelRepository
 import com.fluxtv.app.data.settings.SettingsRepository
 import com.fluxtv.app.playback.FluxPlayerController
 import com.fluxtv.app.playback.NetworkMonitor
+import com.fluxtv.app.update.UpdateManager
 import okhttp3.OkHttpClient
 
 /**
@@ -43,4 +44,13 @@ class AppContainer(context: Context) {
         networkMonitor,
         pauseOnNoisyAudio = !isTelevision
     ) { httpClient }
+
+    /** FluxTV's own updates (Settings → Updates). Downloads keep to a share of the line the player measures. */
+    val updateManager = UpdateManager(
+        appContext,
+        settingsRepository,
+        diagnosticsStore,
+        { httpClient },
+        isTelevision
+    ) { playerController.diagnostics.value.bandwidthBps }
 }

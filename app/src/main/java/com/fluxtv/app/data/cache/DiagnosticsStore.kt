@@ -149,9 +149,10 @@ class DiagnosticsStore(context: Context) {
         /**
          * Turning on, going into standby and coming back are the events that have to be followed
          * from outside the app — they happen while nobody can open Settings — so these categories
-         * are mirrored to logcat (`adb logcat -s FluxTV:I`). The rest stay in the file only: a
+         * are mirrored to logcat (`adb logcat -s FluxTV:I`), as are updates, which mostly happen
+         * then too (their lines never carry an address). The rest stay in the file only: a
          * playback line carries the channel's URL, and a playlist URL can carry credentials.
          */
-        val LOGCAT_CATEGORIES = setOf("boot", "wake", "standby")
+        val LOGCAT_CATEGORIES = setOf("boot", "wake", "standby", "update")
     }
 }
