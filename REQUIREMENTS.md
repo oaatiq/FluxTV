@@ -43,10 +43,12 @@ sections) is met in this implementation.
 - **REQ-SEN-003** — 0 actions to watch; 1 action for next/prev/list/category list (`MainActivity`).
 - **REQ-SEN-010/011/012** — large type (22–72sp) and high-contrast palette in `ui/theme/Theme.kt`
   and `ui/components/Components.kt`.
-- **REQ-SEN-013** — status uses words, never color alone (`strings.xml`, `ErrorMapper`, overlays).
+- **REQ-SEN-013** — status uses words, never color alone (`strings.xml`, `ErrorMapper`, overlays);
+  the reconnecting screen pairs its pictures with one word, *Reconnecting…*.
 - **REQ-SEN-014** — `ChannelRow` / `ChannelInfoBanner` prioritise number, logo, name.
 - **REQ-SEN-015** — strong focus highlight (accent fill + border) on every focusable component.
-- **REQ-SEN-016/017/018** — only a subtle startup pulse; no pointer needed (D-pad focus model).
+- **REQ-SEN-016/017/018** — only a subtle startup pulse, and the slow dots of the reconnecting
+  screen (one dot brightens at a time, a 1.8 s cycle); no pointer needed (D-pad focus model).
 
 ## 7. Remote-control behavior
 - **REQ-REM-001/002** — one central handler maps each key to one action, consistently
@@ -289,12 +291,17 @@ sections) is met in this implementation.
 - **REQ-REL-001..008** — exceptions swallowed in data/cache layers; single reused ExoPlayer; config
   in DataStore/JSON survives crashes & updates; an unreadable settings file is replaced with defaults
   instead of crashing every start.
-- **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
-  "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`), whose heading says
-  why (`PlaybackProblem`): no network, a connection that keeps failing, the provider refusing the
-  channel (HTTP 401/402/403/429/458/509, such as another TV on the same subscription), the provider
-  not having it (404/410), this TV unable to play it, or else temporarily unavailable. Behind the
-  prompt FluxTV keeps healing on its own, one try every 30 s for as long as the channel is on
+- **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; once
+  exhausted, a calm *Reconnecting…* screen made to be understood without reading
+  (`ReconnectingScreen`): the channel's logo and number, slowly moving dots, one word, and nothing
+  to choose (OK still tries at once, ▲ ▼ still change channel). Why is in small print at the bottom
+  with an icon (`PlaybackProblem`): no network (Wi-Fi crossed out), a connection that keeps failing
+  (faint Wi-Fi), the provider refusing the channel (padlock; HTTP 401/402/403/429/458/509, such as
+  another TV on the same subscription), the provider not having it (magnifier; 404/410), a decoder
+  that failed (TV), or else temporarily unavailable ("i"). A channel this TV cannot play at all
+  shows a crossed-out TV and "▲ ▼ Change channel" instead of the dots, as nothing will bring it
+  back. The quick retries before it show the same dots beside their message. Behind the
+  screen FluxTV keeps healing on its own, one try every 30 s for as long as the channel is on
   screen (`scheduleHealRound`): each try builds a new player and opens new connections, whatever
   Android says about the network (an HTTP answer counts as proof the network works); a channel that
   keeps being refused or not found has the playlist reloaded, at most every 30 min, and a new

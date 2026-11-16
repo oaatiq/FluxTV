@@ -77,7 +77,14 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         }
 
         if (showRecovery) {
-            RecoveryOverlay(state.playback.problem ?: PlaybackProblem.UNAVAILABLE)
+            val problem = state.playback.problem ?: PlaybackProblem.UNAVAILABLE
+            ReconnectingScreen(
+                channel = state.playback.channel ?: channel,
+                problem = problem,
+                // Healing needs nothing from the Viewer; a channel this TV cannot play at all needs
+                // another channel, the one thing worth showing.
+                actions = if (problem.healing) null else { { KeyHint("▲ ▼", "Change channel") } }
+            )
         }
 
         if (state.overlay == EasyOverlay.CHANNEL_LIST) {

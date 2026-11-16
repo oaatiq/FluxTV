@@ -225,6 +225,7 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
                 when {
                     recovery && portrait -> CompactRecovery(problem, onRetry = vm::retryCurrent)
                     recovery && !listOpen -> RecoveryCard(
+                        channel = state.playback.channel ?: channel,
                         problem = problem,
                         onRetry = vm::retryCurrent,
                         onPrevious = vm::channelDown,
@@ -902,44 +903,37 @@ private fun LandscapeControls(
     }
 }
 
-/** Upright, when the channel could not be brought back: only Try again, as the list is right below. */
+/**
+ * Upright, when the channel could not be brought back: the reconnecting screen in small, and Try
+ * again. The channel is marked in the list right below, which is also where another is chosen.
+ */
 @Composable
 private fun CompactRecovery(problem: PlaybackProblem, onRetry: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().background(Color(0xAA000000)).padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        BasicText(
-            problem.title,
-            style = TextStyle(color = FluxOnSurface, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        )
-        Spacer(Modifier.height(12.dp))
-        PillButton("Try again", Icons.Filled.Refresh, primary = true, onClick = onRetry)
-    }
+    ReconnectingScreen(
+        channel = null,
+        problem = problem,
+        compact = true,
+        actions = { PillButton("Try again", Icons.Filled.Refresh, primary = true, onClick = onRetry) }
+    )
 }
 
-/** Sideways, after automatic recovery gave up (REQ-REC-005): try again, or go to another channel. */
+/**
+ * Sideways, when the channel could not be brought back (REQ-REC-005): the reconnecting screen,
+ * with buttons under it, as a touch screen has no remote keys to try again or change channel with.
+ */
 @Composable
 private fun RecoveryCard(
+    channel: Channel?,
     problem: PlaybackProblem,
     onRetry: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onChannels: () -> Unit
 ) {
-    Box(Modifier.fillMaxSize().background(Color(0xAA000000)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier.clip(RoundedCornerShape(20.dp)).background(FluxSurface).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            BasicText(
-                problem.title,
-                style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            )
-            Spacer(Modifier.height(8.dp))
-            BasicText(problem.hint, style = TextStyle(color = FluxMuted, fontSize = 15.sp, textAlign = TextAlign.Center))
-            Spacer(Modifier.height(18.dp))
+    ReconnectingScreen(
+        channel = channel,
+        problem = problem,
+        actions = {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PillButton("Try again", Icons.Filled.Refresh, primary = true, onClick = onRetry)
                 PillButton("Previous", Icons.AutoMirrored.Filled.KeyboardArrowLeft, onClick = onPrevious)
@@ -947,7 +941,7 @@ private fun RecoveryCard(
                 PillButton("Channels", Icons.AutoMirrored.Filled.List, onClick = onChannels)
             }
         }
-    }
+    )
 }
 
 /** No channels to show yet: why, in words, and the way to Settings, where a playlist is added. */
@@ -975,13 +969,17 @@ private fun NoChannels(state: UiState, onSettings: () -> Unit, modifier: Modifie
 
 @Composable
 private fun StatusPill(message: String, modifier: Modifier = Modifier) {
-    Box(
+    Row(
         modifier
             .padding(12.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(Scrim)
-            .padding(horizontal = 18.dp, vertical = 10.dp)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // The reconnecting screen's dots: "wait" looks the same at every stage.
+        WaitingDots(7.dp)
+        Spacer(Modifier.width(12.dp))
         BasicText(message, style = TextStyle(color = FluxOnSurface, fontSize = 16.sp, textAlign = TextAlign.Center))
     }
 }

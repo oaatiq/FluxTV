@@ -203,6 +203,29 @@ own, which builds a fresh decoder and rejoins the live edge — a live stream ha
 standby anyway. The same applies on the way back from Settings and from another app. Expect the
 couple of seconds a normal channel change takes, with the channel banner while it loads.
 
+## When a channel stops
+
+A short stall shows nothing; a longer one shows a small message with three moving dots while FluxTV
+retries. If the channel still does not come back (about 45 s), a calm full screen takes over, made
+to be understood without reading: the channel's **logo and number**, the same **slowly moving
+dots**, and one word, *Reconnecting…*. There is nothing to choose: FluxTV keeps bringing the channel
+back by itself, and the picture simply returns. OK tries again at once; ▲ ▼ change channel as always.
+
+For whoever looks after the TV, the reason is in small print at the bottom, with an icon:
+
+| Icon | Reason |
+|---|---|
+| Wi-Fi crossed out | No network connection |
+| Faint Wi-Fi | The connection to the channel keeps failing (server not answering, or too slow) |
+| Padlock | The provider refused the channel: often another TV on the same subscription, or an ended subscription |
+| Magnifier | The provider does not have the channel (moved, or removed from the playlist) |
+| TV | This TV's decoder failed, perhaps only for now |
+| "i" | Temporarily unavailable: the provider is not sending it |
+
+A channel this TV cannot play at all (protected, or in a format it cannot decode) shows a
+**crossed-out TV** and "▲ ▼ Change channel" instead of the dots: nothing will bring it back.
+**Settings → Diagnostics → History** has the details, such as the HTTP status the provider answered.
+
 ## Remote control
 
 | Button | In TV (watching) | In the channel list |

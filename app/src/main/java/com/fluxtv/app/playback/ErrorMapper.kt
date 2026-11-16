@@ -7,12 +7,13 @@ import androidx.media3.datasource.HttpDataSource
 enum class ErrorKind { NETWORK, SOURCE, DECODER, DRM, NO_NETWORK, UNKNOWN }
 
 /**
- * Why a channel could not be brought back, as the recovery prompt says it: [title] is its heading,
- * [hint] the line under it. Each says what went wrong in the Viewer's words, so the prompt itself
- * tells a TV that has no network from a provider that refuses the channel or a TV that cannot decode
- * it; until these, every case had the same heading, "This channel is temporarily unavailable."
+ * Why a channel could not be brought back, as the recovery screen says it: [title] and [hint] in
+ * the Viewer's words, so the screen tells a TV that has no network from a provider that refuses the
+ * channel or a TV that cannot decode it; until these, every case read "This channel is temporarily
+ * unavailable." [healing]: FluxTV goes on trying to bring the channel back in the background; false
+ * only for a channel this TV cannot play at all, which no retry helps.
  */
-enum class PlaybackProblem(val title: String, val hint: String) {
+enum class PlaybackProblem(val title: String, val hint: String, val healing: Boolean = true) {
     NO_NETWORK(
         "No network connection.",
         "Check this TV's internet connection. The channel comes back on its own when it returns."
@@ -35,7 +36,8 @@ enum class PlaybackProblem(val title: String, val hint: String) {
     ),
     CANNOT_PLAY(
         "This TV can't play this channel.",
-        "It is protected, or in a format this TV cannot decode."
+        "It is protected, or in a format this TV cannot decode.",
+        healing = false
     ),
     DECODER(
         "This TV could not play this channel.",

@@ -2,7 +2,6 @@ package com.fluxtv.app.ui.easymode
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -28,19 +27,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.model.Channel
-import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
-import com.fluxtv.app.ui.theme.FluxSurface
 import com.fluxtv.app.ui.theme.LocalTextScale
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -204,66 +200,24 @@ private fun ProgrammeProgress(fraction: Float) {
     }
 }
 
-/** Small, centered, non-intrusive status while preparing / recovering (REQ-BUF-008, §20). */
+/**
+ * Small, centered, non-intrusive status while recovering (REQ-BUF-008, §20), with the same moving
+ * dots as the reconnecting screen, so "wait" looks the same at every stage, for those who do not read.
+ */
 @Composable
 fun StatusOverlay(message: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(
+        Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(14.dp))
                 .background(Scrim)
-                .padding(horizontal = 28.dp, vertical = 18.dp)
+                .padding(horizontal = 28.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            WaitingDots(10.dp)
+            Spacer(Modifier.width(18.dp))
             BasicText(message, style = TextStyle(color = FluxOnSurface, fontSize = 24.sp))
         }
-    }
-}
-
-/**
- * Shown only after automatic recovery is exhausted (REQ-REC-005): the heading says why, the line
- * under it what that means. Keys handled centrally.
- */
-@Composable
-fun RecoveryOverlay(problem: PlaybackProblem) {
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xAA000000)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(FluxSurface)
-                .padding(40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            BasicText(
-                problem.title,
-                style = TextStyle(color = FluxOnSurface, fontSize = 30.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            )
-            Spacer(Modifier.height(12.dp))
-            BasicText(problem.hint, style = TextStyle(color = FluxMuted, fontSize = 20.sp, textAlign = TextAlign.Center))
-            Spacer(Modifier.height(28.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                PromptHint("OK", "Try again")
-                PromptHint("▲ ▼", "Change channel")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PromptHint(key: String, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(FluxAccent)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        ) {
-            BasicText(key, style = TextStyle(color = Color(0xFF00131C), fontSize = 20.sp, fontWeight = FontWeight.Bold))
-        }
-        Spacer(Modifier.width(10.dp))
-        BasicText(label, style = TextStyle(color = FluxOnSurface, fontSize = 20.sp))
     }
 }
 
