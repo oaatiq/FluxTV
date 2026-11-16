@@ -146,7 +146,7 @@ private class BrowseState {
  */
 @Composable
 fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean) -> Unit) {
-    val playerReady by vm.controller.playerReady.collectAsStateWithLifecycle()
+    val player by vm.controller.activePlayer.collectAsStateWithLifecycle()
     val pausedBySystem by vm.controller.pausedBySystem.collectAsStateWithLifecycle()
     val guide by vm.guide.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
@@ -195,8 +195,7 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
                 }
             ) {
                 PlayerSurface(
-                    controller = vm.controller,
-                    playerReady = playerReady,
+                    player = player,
                     onSurfaceReady = vm::onVideoSurfaceReady,
                     onSurfaceLost = vm::onVideoSurfaceLost,
                     modifier = Modifier.fillMaxSize()

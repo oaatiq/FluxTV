@@ -36,15 +36,25 @@ enum class PlaybackProblem(val title: String, val hint: String) {
     CANNOT_PLAY(
         "This TV can't play this channel.",
         "It is protected, or in a format this TV cannot decode."
+    ),
+    DECODER(
+        "This TV could not play this channel.",
+        "Its decoder may only be busy for now. FluxTV keeps trying."
     )
 }
 
+/**
+ * [recoverable]: retried at once, a few times (RecoveryPolicy). [keepTrying]: once those retries are
+ * used up, or for an error not retried at once, worth trying again in the background, a round at a
+ * time, until the channel plays: the cause may go away by itself.
+ */
 data class MappedError(
     val kind: ErrorKind,
     val userMessage: String,
     val recoverable: Boolean,
     val technical: String,
-    val problem: PlaybackProblem
+    val problem: PlaybackProblem,
+    val keepTrying: Boolean = recoverable
 )
 
 /**
@@ -68,18 +78,26 @@ object ErrorMapper {
     /** The message Media3 gives every source error; it says nothing the error code does not. */
     private const val GENERIC_SOURCE_MESSAGE = "Source error"
 
+    /** Errors where nothing came back from the server: the ones a missing network causes. */
+    private val CONNECTION_ERRORS = setOf(
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        PlaybackException.ERROR_CODE_TIMEOUT
+    )
+
     fun map(error: PlaybackException, hasNetwork: Boolean): MappedError {
         val technical = technicalText(error)
 
-        if (!hasNetwork) {
+        // Only an error where the server never answered can be the missing network's doing. One that
+        // did answer (an HTTP status, a stream that would not read) proves the network works, so
+        // it is reported for what it is even when Android says there is no network.
+        if (!hasNetwork && error.errorCode in CONNECTION_ERRORS) {
             return MappedError(ErrorKind.NO_NETWORK, NO_NETWORK, recoverable = true, technical, PlaybackProblem.NO_NETWORK)
         }
 
         return when (error.errorCode) {
-            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-            PlaybackException.ERROR_CODE_TIMEOUT ->
+            in CONNECTION_ERRORS ->
                 MappedError(ErrorKind.NETWORK, CONNECTION_INTERRUPTED, recoverable = true, technical, PlaybackProblem.CONNECTION)
 
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
@@ -100,9 +118,15 @@ object ErrorMapper {
             PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
                 MappedError(ErrorKind.SOURCE, CHANNEL_UNAVAILABLE, recoverable = true, technical, PlaybackProblem.UNAVAILABLE)
 
+            // A decoder that would not start, or stopped mid-stream, may only have been busy: still
+            // held by what used it last, after a wake or a quick zap. Tried again in the background.
             PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
             PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-            PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED ->
+                MappedError(ErrorKind.DECODER, CANNOT_PLAY, recoverable = false, technical, PlaybackProblem.DECODER, keepTrying = true)
+
+            // A format this TV has no decoder for, or beyond what its decoder can do: it will not
+            // play however often it is tried.
             PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
             PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
                 MappedError(ErrorKind.DECODER, CANNOT_PLAY, recoverable = false, technical, PlaybackProblem.CANNOT_PLAY)

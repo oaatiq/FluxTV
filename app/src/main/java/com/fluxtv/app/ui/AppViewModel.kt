@@ -216,6 +216,9 @@ class AppViewModel(
         viewModelScope.launch {
             container.playerController.status.collect { st -> _state.update { it.copy(playback = st) } }
         }
+        viewModelScope.launch {
+            container.playerController.playlistReloadWanted.collect { reloadPlaylistForRecovery() }
+        }
         // The diagnostics figures and history are not copied in here: they change many times per
         // channel change, and every change would hand Easy Mode a new state for data only the
         // Diagnostics screen shows. That screen collects them from the player itself.
@@ -363,6 +366,25 @@ class AppViewModel(
         val settings = container.settingsRepository.settings.first()
         val playlist = settings.activePlaylist ?: return
         container.channelRepository.refresh(playlist, settings.effectiveUserAgent)
+    }
+
+    /**
+     * The channel on screen keeps being refused or not found, and the player asks for the playlist
+     * again (FluxPlayerController.playlistReloadWanted): the provider may have moved the channel or
+     * renewed the token in its address. A new entry reaches the player through the channels'
+     * collector in init. The outcome goes to the Diagnostics history, without the link, which can
+     * hold credentials.
+     */
+    private suspend fun reloadPlaylistForRecovery() {
+        val settings = container.settingsRepository.settings.first()
+        val playlist = settings.activePlaylist ?: return
+        val result = when (val outcome = container.channelRepository.refresh(playlist, settings.effectiveUserAgent)) {
+            is RefreshOutcome.Success -> "Playlist reloaded: ${outcome.count} channels"
+            is RefreshOutcome.Failed -> "Playlist reload failed" +
+                (outcome.httpCode?.let { " (HTTP $it)" } ?: "") +
+                if (outcome.keptExisting) ": keeping the channels there are" else ""
+        }
+        container.playerController.logPlaylistReload(result)
     }
 
     // ---------- programme guide ----------

@@ -9,16 +9,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.fluxtv.app.playback.FluxPlayerController
 
 /**
  * Full-screen video surface (REQ-SEN-001). Uses a bare Media3 [PlayerView] with its own controls
  * disabled — all control comes from the remote via the central key handler.
  *
- * [playerReady] is passed in so this recomposes (and re-binds the player) the moment the controller
- * has created its ExoPlayer.
+ * [player] is the controller's current player (FluxPlayerController.activePlayer): none until the
+ * first tune, and a new one when healing rebuilds it, which this view then binds to in its place.
  *
  * A TV going into standby destroys the video surface and builds a new one on wake, and a decoder
  * that was playing cannot be relied on to move onto the replacement: many TV decoders keep the
@@ -27,8 +27,7 @@ import com.fluxtv.app.playback.FluxPlayerController
  */
 @Composable
 fun PlayerSurface(
-    controller: FluxPlayerController,
-    playerReady: Boolean,
+    player: Player?,
     onSurfaceReady: () -> Unit,
     onSurfaceLost: () -> Unit,
     modifier: Modifier = Modifier
@@ -81,9 +80,6 @@ fun PlayerSurface(
         // with the process-wide player and kept receiving its events until FluxTV was closed: one
         // more for every visit to Settings. Detaching it here lets it go for real.
         onRelease = { view -> view.player = null },
-        update = { view ->
-            // The controller has no player until it first tunes, hence the readiness signal.
-            view.player = if (playerReady) controller.player else null
-        }
+        update = { view -> view.player = player }
     )
 }

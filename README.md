@@ -381,7 +381,9 @@ Optionally protect it with a **PIN** (Preferences). Sections:
   and noted under *decoder*. Each *error* line says what caused it: the HTTP status the provider
   answered (`HTTP 403 Forbidden`: refused, often another TV on the same subscription; `HTTP 404`:
   no such channel; `HTTP 5xx`: the provider's server failing), or what failed underneath, such as
-  a certificate the TV does not trust or a server name that does not resolve.
+  a certificate the TV does not trust or a server name that does not resolve. *recovery* lines show
+  the healing behind the error screen: each background try (with a new player and connections),
+  each playlist reload it asked for, and *playing again after N background tries* once it worked.
 
 ## Playlists
 
@@ -406,7 +408,9 @@ playlist name, link or choice, and the Viewer is never asked to pick one.
   address apart from the server (`http://server:port`), or else by its name and category. A new
   link to a list that is mostly another one starts again at #1.
 - **The playlist in use cannot be deleted**: put another one in use first.
-- Playback trouble never switches playlists by itself; FluxTV keeps retrying the one in use.
+- Playback trouble never switches playlists by itself; FluxTV keeps retrying the one in use. A
+  channel the provider keeps refusing or no longer has does get the playlist in use reloaded (at
+  most every 30 minutes), in case the provider moved it to a new address or renewed its token.
 - Updating from a version with a single playlist keeps it, as the first saved playlist and the one in
   use, with its favorites and last channel.
 

@@ -293,7 +293,13 @@ sections) is met in this implementation.
   "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`), whose heading says
   why (`PlaybackProblem`): no network, a connection that keeps failing, the provider refusing the
   channel (HTTP 401/402/403/429/458/509, such as another TV on the same subscription), the provider
-  not having it (404/410), this TV unable to play it, or else temporarily unavailable. A channel that cannot
+  not having it (404/410), this TV unable to play it, or else temporarily unavailable. Behind the
+  prompt FluxTV keeps healing on its own, one try every 30 s for as long as the channel is on
+  screen (`scheduleHealRound`): each try builds a new player and opens new connections, whatever
+  Android says about the network (an HTTP answer counts as proof the network works); a channel that
+  keeps being refused or not found has the playlist reloaded, at most every 30 min, and a new
+  address in it is tried at once; a decoder that would not start, or failed mid-stream, is tried
+  again too. A channel that cannot
   play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried. A
   picture that stops while the sound plays on (no new frame for 6 s after frames had been coming)
   gets a fresh decoder, at most 3 times per tune (`startFrozenPictureWatch`).

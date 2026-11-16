@@ -25,11 +25,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.util.Locale
 
@@ -105,6 +111,17 @@ class FluxPlayerController(
     /** How often this start of the channel has been restarted for a frozen picture. */
     private var frozenRestarts = 0
 
+    /**
+     * Background healing once the quick retries are used up (see [scheduleHealRound]): the rounds
+     * this start of the channel has had, and the failure last written to the history, so that one
+     * repeated every round is written once.
+     */
+    private var healRound = 0
+    private var lastHealFailure: String? = null
+
+    /** When a playlist reload was last asked for, see [requestPlaylistReload]. */
+    private var lastPlaylistReloadMs = -PLAYLIST_RELOAD_MIN_GAP_MS
+
     private val _status = MutableStateFlow(PlaybackStatus())
     val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
 
@@ -117,8 +134,23 @@ class FluxPlayerController(
     private val _videoFrameRate = MutableStateFlow(0f)
     val videoFrameRate: StateFlow<Float> = _videoFrameRate.asStateFlow()
 
-    private val _playerReady = MutableStateFlow(false)
-    val playerReady: StateFlow<Boolean> = _playerReady.asStateFlow()
+    /**
+     * The player the video view shows: none until the first tune, and a new one each time healing
+     * rebuilds it ([rebuildPlayer]), which the view then binds to in place of the old one.
+     */
+    private val _activePlayer = MutableStateFlow<ExoPlayer?>(null)
+    val activePlayer: StateFlow<ExoPlayer?> = _activePlayer.asStateFlow()
+
+    /**
+     * Emits when the channel on screen keeps being refused or not found. The provider may have moved
+     * it to a new address or renewed the access token in it, which only a fresh copy of the playlist
+     * has, so the app reloads the playlist in use; [updateChannel] then hands the new entry over.
+     */
+    private val _playlistReloadWanted = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val playlistReloadWanted: SharedFlow<Unit> = _playlistReloadWanted.asSharedFlow()
 
     /**
      * Android paused the channel on its own: another app took the sound for good, or, on a phone,
@@ -174,6 +206,8 @@ class FluxPlayerController(
         plainTried = !loadAsHls
         frozenRestarts = 0
         frozenPictureWatch?.cancel()
+        healRound = 0
+        lastHealFailure = null
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -200,15 +234,24 @@ class FluxPlayerController(
     /**
      * The playlist was refreshed. If [channel] is the one being played, retries and re-tunes use this
      * entry from now on: a provider can move a channel to a new address. Playback goes on as it is.
+     * A channel being healed in the background that now has a new address tries it at once.
      */
     fun updateChannel(channel: Channel) {
-        if (currentChannel?.stableId == channel.stableId) currentChannel = channel
+        val previous = currentChannel ?: return
+        if (previous.stableId != channel.stableId) return
+        currentChannel = channel
+        if (channel.url != previous.url && slowRetryJob?.isActive == true) {
+            logEvent("recovery", "The reloaded playlist has a new address for ${channel.name}: trying it now")
+            scheduleHealRound(delayMs = 0)
+        }
     }
 
     /** User pressed "Try again" on the recovery prompt (REQ-REC-005). Resets the budget. */
     fun retryNow() {
         slowRetryJob?.cancel()
         recovery.reset()
+        healRound = 0
+        lastHealFailure = null
         decoderRetried = false
         hlsTried = loadAsHls
         plainTried = !loadAsHls
@@ -268,7 +311,7 @@ class FluxPlayerController(
         }
         stabilityJob?.cancel()
         bundle = null
-        _playerReady.value = false
+        _activePlayer.value = null
         // The scope stays alive on purpose: this controller is a process-wide singleton that outlives
         // the activity (Exit closes the activity, the process may be reused), and recovery retries,
         // logging and the network-restore collector all run in it. The next playChannel() builds a
@@ -293,7 +336,21 @@ class FluxPlayerController(
         created.player.addListener(playerListener)
         created.player.addAnalyticsListener(analyticsListener)
         bundle = created
-        _playerReady.value = true
+        _activePlayer.value = created.player
+    }
+
+    /**
+     * Lets the player go and builds a new one in its place, which the video view binds to through
+     * [activePlayer]. Nothing of the failed attempts carries over: not a decoder still held, nor a
+     * player stuck in a call to a TV's media stack (releasing gives up on that after half a second).
+     */
+    private fun rebuildPlayer() {
+        val old = bundle ?: return
+        old.player.removeListener(playerListener)
+        old.player.removeAnalyticsListener(analyticsListener)
+        old.player.release()
+        bundle = null
+        ensurePlayer()
     }
 
     private fun onNetworkRestored() {
@@ -304,17 +361,20 @@ class FluxPlayerController(
         if (currentChannel != null && (phase == PlaybackPhase.RECOVERING || phase == PlaybackPhase.FAILED)) {
             slowRetryJob?.cancel()
             recovery.reset()
+            healRound = 0
+            lastHealFailure = null
             updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
             reprepareCurrent("network restored")
         }
     }
 
-    private fun reprepareCurrent(reason: String) {
+    /** [reason] is written to the history; null for a try that has written its own line. */
+    private fun reprepareCurrent(reason: String?) {
         val p = bundle?.player ?: return
         val channel = currentChannel ?: return
         recoveryCount++
         prepareStartMs = SystemClock.elapsedRealtime()
-        logEvent("recovery", "Recovery attempt ${recovery.attempt} for ${channel.name}: $reason")
+        if (reason != null) logEvent("recovery", "Recovery attempt ${recovery.attempt} for ${channel.name}: $reason")
         if (load(p, channel)) startBufferingWatchdog(START_TIMEOUT_MS)
     }
 
@@ -427,9 +487,7 @@ class FluxPlayerController(
     /** [problem]: why, for the recovery prompt's heading if this was the last retry. */
     private fun scheduleRetry(message: String, reason: String, problem: PlaybackProblem) {
         if (!recovery.canRetry()) {
-            updateStatus(PlaybackPhase.FAILED, message, prompt = true, problem = problem)
-            logEvent("error", "Recovery exhausted for ${currentChannel?.name}: $reason")
-            startSlowAutoRecovery()
+            failAndKeepTrying(message, reason, problem)
             return
         }
         val delayMs = recovery.nextDelayMs()
@@ -442,24 +500,74 @@ class FluxPlayerController(
     }
 
     /**
-     * After bounded recovery is exhausted, keep trying slowly in the background so the TV heals
-     * itself once the network returns, without the Viewer pressing anything (REQ-BUF-006,
-     * REQ-REC-003). A 30s heartbeat is deliberately not a tight retry loop (REQ-REC-007).
+     * The channel did not come back: the prompt says why (REQ-REC-005), and FluxTV goes on trying in
+     * the background without the Viewer pressing anything, however long it takes (REQ-BUF-006,
+     * REQ-REC-003). A channel the provider keeps refusing or no longer has gets the playlist
+     * reloaded too, in case it moved.
      */
-    private fun startSlowAutoRecovery() {
-        if (slowRetryJob?.isActive == true) return
-        slowRetryJob = scope.launch {
-            while (true) {
-                delay(30_000)
-                val channel = currentChannel ?: break
-                if (onScreen && networkMonitor.hasNetwork()) {
-                    logEvent("recovery", "Background auto-retry after outage for ${channel.name}")
-                    recovery.reset()
-                    reprepareCurrent("auto-retry after outage")
-                    break
-                }
-            }
+    private fun failAndKeepTrying(message: String, reason: String, problem: PlaybackProblem) {
+        updateStatus(PlaybackPhase.FAILED, message, prompt = true, problem = problem)
+        when {
+            healRound == 0 -> logEvent("error", "Recovery exhausted for ${currentChannel?.name}: $reason")
+            reason != lastHealFailure ->
+                logEvent("error", "Still not playing ${currentChannel?.name} after $healRound background tries: $reason")
         }
+        lastHealFailure = reason
+        if (problem == PlaybackProblem.REFUSED || problem == PlaybackProblem.GONE) requestPlaylistReload()
+        scheduleHealRound()
+    }
+
+    /**
+     * One round of background healing, [delayMs] from now; a round that fails schedules the next.
+     * Each round is one try, not another series of quick retries, so the prompt stays steady rather
+     * than coming and going, and a provider that refuses the channel gets one connection every
+     * [HEAL_ROUND_MS] (REQ-REC-007): a flood of reconnects can get a subscription blocked.
+     *
+     * Each round starts the channel afresh: new connections to the provider in place of ones that may
+     * have died quietly, and a new player ([rebuildPlayer]). It tries whatever Android says about the
+     * network: a TV that wrongly reports none would otherwise never heal, and a network that is
+     * really down costs one failed connection per round. While FluxTV is off screen the round waits
+     * for it to come back; leaving the screen for good (onStop) or a new tune cancels it.
+     */
+    private fun scheduleHealRound(delayMs: Long = HEAL_ROUND_MS) {
+        slowRetryJob?.cancel()
+        slowRetryJob = scope.launch {
+            delay(delayMs)
+            while (!onScreen) delay(HEAL_ROUND_MS)
+            val channel = currentChannel ?: return@launch
+            healRound++
+            // Written for the first rounds and then every tenth, so a long outage does not push
+            // everything else out of the history.
+            if (healRound <= 3 || healRound % 10 == 0) {
+                val network = if (networkMonitor.hasNetwork()) "" else " (Android reports no network: trying anyway)"
+                logEvent("recovery", "Background try $healRound for ${channel.name}: new player and connections$network")
+            }
+            // Only connections lying idle are closed, never a playlist or guide download under way.
+            withContext(Dispatchers.IO) { runCatching { httpClient().connectionPool.evictAll() } }
+            rebuildPlayer()
+            // The video view binds to the new player on its next frame. Started before that, the
+            // decoder could get its surface late, which some TV decoders answer with sound and no
+            // picture (see onStop); so the round waits for the surface, a moment at most.
+            bundle?.player?.let { p -> withTimeoutOrNull(SURFACE_WAIT_MS) { while (p.surfaceSize.width <= 0) delay(20) } }
+            reprepareCurrent(reason = null)
+        }
+    }
+
+    /**
+     * Asks the app to reload the playlist ([playlistReloadWanted]), at most once every
+     * [PLAYLIST_RELOAD_MIN_GAP_MS]: a large playlist is a heavy download for a TV and the provider.
+     */
+    private fun requestPlaylistReload() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlaylistReloadMs < PLAYLIST_RELOAD_MIN_GAP_MS) return
+        lastPlaylistReloadMs = now
+        logEvent("recovery", "${currentChannel?.name} keeps being refused or not found: reloading the playlist in case it moved")
+        _playlistReloadWanted.tryEmit(Unit)
+    }
+
+    /** Recorded by the app once the reload [playlistReloadWanted] asked for has finished. */
+    fun logPlaylistReload(result: String) {
+        logEvent("recovery", result)
     }
 
     /**
@@ -688,6 +796,12 @@ class FluxPlayerController(
                     bufferingWatchdog?.cancel()
                     slowRetryJob?.cancel()
                     if (loadAsHls) currentChannel?.let { knownHls.add(it.url); knownPlain.remove(it.url) }
+                    if (healRound > 0) {
+                        val tries = if (healRound == 1) "1 background try" else "$healRound background tries"
+                        logEvent("recovery", "${currentChannel?.name} is playing again after $tries")
+                        healRound = 0
+                        lastHealFailure = null
+                    }
                     if (prepareStartMs > 0L) {
                         val startup = SystemClock.elapsedRealtime() - prepareStartMs
                         prepareStartMs = 0L
@@ -720,10 +834,12 @@ class FluxPlayerController(
             if (isNotHlsPlaylist(error) && tryAsPlain()) return
             val hasNetwork = networkMonitor.hasNetwork()
             val mapped = ErrorMapper.map(error, hasNetwork)
-            logEvent("error", mapped.technical)
+            // A background round that fails as the last one did is not written again (see failAndKeepTrying).
+            if (healRound == 0 || mapped.technical != lastHealFailure) logEvent("error", mapped.technical)
             when {
                 mapped.recoverable -> scheduleRetry(mapped.userMessage, mapped.technical, mapped.problem)
                 mapped.kind == ErrorKind.DECODER && !decoderRetried -> retryDecoderOnce()
+                mapped.keepTrying -> failAndKeepTrying(mapped.userMessage, mapped.technical, mapped.problem)
                 else -> updateStatus(PlaybackPhase.FAILED, mapped.userMessage, prompt = true, problem = mapped.problem)
             }
         }
@@ -846,5 +962,14 @@ class FluxPlayerController(
 
         /** Restarts for a frozen picture per tune, so a decoder that always freezes cannot loop. */
         const val MAX_FROZEN_RESTARTS = 3
+
+        /** The pause between background healing rounds, see [scheduleHealRound]. */
+        const val HEAL_ROUND_MS = 30_000L
+
+        /** How long a healing round waits for the video view to take the new player. */
+        const val SURFACE_WAIT_MS = 2_000L
+
+        /** The least time between two playlist reloads asked for by healing. */
+        const val PLAYLIST_RELOAD_MIN_GAP_MS = 30 * 60_000L
     }
 }
