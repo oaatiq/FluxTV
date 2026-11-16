@@ -5,9 +5,9 @@ import android.net.Uri
 import com.fluxtv.app.data.m3u.M3uEntry
 import com.fluxtv.app.data.m3u.M3uParser
 import com.fluxtv.app.data.m3u.M3uPlaylist
+import com.fluxtv.app.util.localFile
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 sealed class FetchResult {
@@ -45,10 +45,8 @@ class PlaylistFetcher(
                     success(stream.bufferedReader().use { M3uParser.parse(it) })
                 }
 
-                type == "file" || source.startsWith("/") || source.startsWith("file:") -> {
-                    val path = source.removePrefix("file://")
-                    success(File(path).bufferedReader().use { M3uParser.parse(it) })
-                }
+                type == "file" || source.startsWith("/") || source.startsWith("file:") ->
+                    success(localFile(source).bufferedReader().use { M3uParser.parse(it) })
 
                 else -> {
                     val request = Request.Builder()

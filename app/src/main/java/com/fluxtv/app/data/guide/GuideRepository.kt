@@ -5,6 +5,7 @@ import android.os.Process
 import android.util.AtomicFile
 import android.util.Xml
 import com.fluxtv.app.data.model.Channel
+import com.fluxtv.app.util.localFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -208,7 +209,7 @@ class GuideRepository(
     /** Opens [source] (a link, or a file on the TV), unpacking it when it is gzipped (".xml.gz"). */
     private fun <T> open(source: String, userAgent: String, read: (InputStream) -> T): T {
         if (source.startsWith("/") || source.startsWith("file:")) {
-            return FileInputStream(source.removePrefix("file://")).use { read(unpacked(it)) }
+            return FileInputStream(localFile(source)).use { read(unpacked(it)) }
         }
         val request = Request.Builder().url(source).header("User-Agent", userAgent).build()
         client.newCall(request).execute().use { resp ->
