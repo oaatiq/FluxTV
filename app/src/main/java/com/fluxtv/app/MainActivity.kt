@@ -316,7 +316,11 @@ class MainActivity : ComponentActivity() {
                         if (up) {
                             val start = okDownTime
                             okDownTime = 0L
-                            val held = if (start > 0L) SystemClock.elapsedRealtime() - start else 0L
+                            // A release whose press this screen never saw: the OK that confirmed a
+                            // channel number, or one pressed on the start-up screen. Acted on, it
+                            // opened the channel list (or Settings) over the channel just tuned.
+                            if (start == 0L) return true
+                            val held = SystemClock.elapsedRealtime() - start
                             when {
                                 held >= 2000L -> viewModel.requestAdmin()
                                 state.playback.showRecoveryPrompt -> viewModel.retryCurrent()
@@ -332,6 +336,8 @@ class MainActivity : ComponentActivity() {
                         return true
                     }
                     EasyOverlay.NUMBER_ENTRY -> {
+                        // An OK held since before the digits is not a press on the picture any more.
+                        okDownTime = 0L
                         if (firstDown) viewModel.confirmNumberEntry()
                         return true
                     }
