@@ -355,7 +355,7 @@ class FluxPlayerController(
         frozenPictureWatch?.cancel()
         bundle?.player?.stop()
         logEvent("error", "Cannot play ${currentChannel?.name}: $reason")
-        updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true)
+        updateStatus(PlaybackPhase.FAILED, ErrorMapper.CANNOT_PLAY, prompt = true, problem = PlaybackProblem.CANNOT_PLAY)
     }
 
     /**
@@ -424,9 +424,10 @@ class FluxPlayerController(
         error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
             error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
 
-    private fun scheduleRetry(message: String, reason: String) {
+    /** [problem]: why, for the recovery prompt's heading if this was the last retry. */
+    private fun scheduleRetry(message: String, reason: String, problem: PlaybackProblem) {
         if (!recovery.canRetry()) {
-            updateStatus(PlaybackPhase.FAILED, message, prompt = true)
+            updateStatus(PlaybackPhase.FAILED, message, prompt = true, problem = problem)
             logEvent("error", "Recovery exhausted for ${currentChannel?.name}: $reason")
             startSlowAutoRecovery()
             return
@@ -475,7 +476,7 @@ class FluxPlayerController(
             // Off screen nobody is watching; onResume() arms it again if the stall is still there.
             if (p.playbackState == Player.STATE_BUFFERING && onScreen) {
                 logEvent("buffering", "Prolonged buffering on ${currentChannel?.name}")
-                scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "prolonged buffering")
+                scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "prolonged buffering", PlaybackProblem.CONNECTION)
             }
         }
     }
@@ -492,7 +493,12 @@ class FluxPlayerController(
             decoderRetried = false
             if (recovery.attempt > 0) {
                 recovery.reset()
-                updateStatus(_status.value.phase, _status.value.userMessage, _status.value.showRecoveryPrompt)
+                updateStatus(
+                    _status.value.phase,
+                    _status.value.userMessage,
+                    _status.value.showRecoveryPrompt,
+                    problem = _status.value.problem
+                )
                 logEvent("recovery", "Playback stable for ${STABLE_PLAYBACK_MS / 1000} s: recovery budget restored")
             }
         }
@@ -577,14 +583,16 @@ class FluxPlayerController(
         phase: PlaybackPhase,
         message: String?,
         prompt: Boolean,
-        attempt: Int = recovery.attempt
+        attempt: Int = recovery.attempt,
+        problem: PlaybackProblem? = null
     ) {
         _status.value = _status.value.copy(
             phase = phase,
             channel = currentChannel,
             userMessage = message,
             showRecoveryPrompt = prompt,
-            recoveryAttempt = attempt
+            recoveryAttempt = attempt,
+            problem = problem
         )
     }
 
@@ -696,7 +704,7 @@ class FluxPlayerController(
                 }
 
                 Player.STATE_ENDED ->
-                    scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "stream ended")
+                    scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "stream ended", PlaybackProblem.CONNECTION)
 
                 Player.STATE_IDLE -> { }
             }
@@ -714,9 +722,9 @@ class FluxPlayerController(
             val mapped = ErrorMapper.map(error, hasNetwork)
             logEvent("error", mapped.technical)
             when {
-                mapped.recoverable -> scheduleRetry(mapped.userMessage, mapped.technical)
+                mapped.recoverable -> scheduleRetry(mapped.userMessage, mapped.technical, mapped.problem)
                 mapped.kind == ErrorKind.DECODER && !decoderRetried -> retryDecoderOnce()
-                else -> updateStatus(PlaybackPhase.FAILED, mapped.userMessage, prompt = true)
+                else -> updateStatus(PlaybackPhase.FAILED, mapped.userMessage, prompt = true, problem = mapped.problem)
             }
         }
 

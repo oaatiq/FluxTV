@@ -378,7 +378,10 @@ Optionally protect it with a **PIN** (Preferences). Sections:
   bandwidth, buffered duration, dropped frames, buffering events, recoveries, channel startup
   time and the volume levelling gain. If FluxTV ever closes by itself, the next start adds a *crash*
   line saying what failed and where; a picture that froze while the sound played on is restarted
-  and noted under *decoder*.
+  and noted under *decoder*. Each *error* line says what caused it: the HTTP status the provider
+  answered (`HTTP 403 Forbidden`: refused, often another TV on the same subscription; `HTTP 404`:
+  no such channel; `HTTP 5xx`: the provider's server failing), or what failed underneath, such as
+  a certificate the TV does not trust or a server name that does not resolve.
 
 ## Playlists
 

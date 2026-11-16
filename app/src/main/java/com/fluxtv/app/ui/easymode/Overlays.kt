@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.model.Channel
+import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.components.overscan
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
@@ -218,9 +219,12 @@ fun StatusOverlay(message: String) {
     }
 }
 
-/** Shown only after automatic recovery is exhausted (REQ-REC-005). Keys handled centrally. */
+/**
+ * Shown only after automatic recovery is exhausted (REQ-REC-005): the heading says why, the line
+ * under it what that means. Keys handled centrally.
+ */
 @Composable
-fun RecoveryOverlay(message: String) {
+fun RecoveryOverlay(problem: PlaybackProblem) {
     Box(
         modifier = Modifier.fillMaxSize().background(Color(0xAA000000)),
         contentAlignment = Alignment.Center
@@ -233,11 +237,11 @@ fun RecoveryOverlay(message: String) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             BasicText(
-                "This channel is temporarily unavailable.",
+                problem.title,
                 style = TextStyle(color = FluxOnSurface, fontSize = 30.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             )
             Spacer(Modifier.height(12.dp))
-            BasicText(message, style = TextStyle(color = FluxMuted, fontSize = 20.sp, textAlign = TextAlign.Center))
+            BasicText(problem.hint, style = TextStyle(color = FluxMuted, fontSize = 20.sp, textAlign = TextAlign.Center))
             Spacer(Modifier.height(28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 PromptHint("OK", "Try again")

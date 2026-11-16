@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.BrowsePane
 import com.fluxtv.app.ui.EasyOverlay
@@ -77,7 +78,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         }
 
         if (showRecovery) {
-            RecoveryOverlay(state.playback.userMessage ?: "Channel temporarily unavailable.")
+            RecoveryOverlay(state.playback.problem ?: PlaybackProblem.UNAVAILABLE)
         }
 
         if (state.overlay == EasyOverlay.CHANNEL_LIST) {

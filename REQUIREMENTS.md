@@ -290,7 +290,10 @@ sections) is met in this implementation.
   in DataStore/JSON survives crashes & updates; an unreadable settings file is replaced with defaults
   instead of crashing every start.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
-  "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`). A channel that cannot
+  "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`), whose heading says
+  why (`PlaybackProblem`): no network, a connection that keeps failing, the provider refusing the
+  channel (HTTP 401/402/403/429/458/509, such as another TV on the same subscription), the provider
+  not having it (404/410), this TV unable to play it, or else temporarily unavailable. A channel that cannot
   play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried. A
   picture that stops while the sound plays on (no new frame for 6 s after frames had been coming)
   gets a fresh decoder, at most 3 times per tune (`startFrozenPictureWatch`).
@@ -310,7 +313,9 @@ sections) is met in this implementation.
   on a TV, the system bars, cutout and keyboard on a phone.
 
 ## 20–24. Errors, diagnostics, config protection, updates, security
-- **§20** — `ErrorMapper` produces the exact Viewer-facing sentences; technical text kept for admin.
+- **§20** — `ErrorMapper` produces the exact Viewer-facing sentences; technical text kept for admin,
+  with what caused the error: the HTTP status the server answered (`HTTP 403 Forbidden`), or the
+  exception underneath (an untrusted certificate, a name that does not resolve, a timeout).
 - **REQ-DIA-001..004** — admin-only Diagnostics screen + persisted `DiagnosticsStore` history, kept in
   memory and saved one appended line per event (the file is compacted at twice its 300-event cap).
   A crash leaves a note (`CrashNotes`) that the next start adds to the history.

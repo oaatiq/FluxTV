@@ -91,6 +91,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.model.Channel
+import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.BROWSE_ALL
 import com.fluxtv.app.ui.BROWSE_FAVORITES
@@ -220,11 +221,12 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
                 }
 
                 val message = state.playback.userMessage
+                val problem = state.playback.problem ?: PlaybackProblem.UNAVAILABLE
                 val listOpen = state.overlay != EasyOverlay.NONE
                 when {
-                    recovery && portrait -> CompactRecovery(onRetry = vm::retryCurrent)
+                    recovery && portrait -> CompactRecovery(problem, onRetry = vm::retryCurrent)
                     recovery && !listOpen -> RecoveryCard(
-                        message = message ?: "Channel temporarily unavailable.",
+                        problem = problem,
                         onRetry = vm::retryCurrent,
                         onPrevious = vm::channelDown,
                         onNext = vm::channelUp,
@@ -903,14 +905,14 @@ private fun LandscapeControls(
 
 /** Upright, when the channel could not be brought back: only Try again, as the list is right below. */
 @Composable
-private fun CompactRecovery(onRetry: () -> Unit) {
+private fun CompactRecovery(problem: PlaybackProblem, onRetry: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(Color(0xAA000000)).padding(16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BasicText(
-            "This channel is temporarily unavailable.",
+            problem.title,
             style = TextStyle(color = FluxOnSurface, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         )
         Spacer(Modifier.height(12.dp))
@@ -921,7 +923,7 @@ private fun CompactRecovery(onRetry: () -> Unit) {
 /** Sideways, after automatic recovery gave up (REQ-REC-005): try again, or go to another channel. */
 @Composable
 private fun RecoveryCard(
-    message: String,
+    problem: PlaybackProblem,
     onRetry: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -933,11 +935,11 @@ private fun RecoveryCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             BasicText(
-                "This channel is temporarily unavailable.",
+                problem.title,
                 style = TextStyle(color = FluxOnSurface, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             )
             Spacer(Modifier.height(8.dp))
-            BasicText(message, style = TextStyle(color = FluxMuted, fontSize = 15.sp, textAlign = TextAlign.Center))
+            BasicText(problem.hint, style = TextStyle(color = FluxMuted, fontSize = 15.sp, textAlign = TextAlign.Center))
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PillButton("Try again", Icons.Filled.Refresh, primary = true, onClick = onRetry)
