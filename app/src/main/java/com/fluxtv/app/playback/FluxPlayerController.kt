@@ -142,9 +142,9 @@ class FluxPlayerController(
     val activePlayer: StateFlow<ExoPlayer?> = _activePlayer.asStateFlow()
 
     /**
-     * Emits when the channel on screen keeps being refused or not found. The provider may have moved
-     * it to a new address or renewed the access token in it, which only a fresh copy of the playlist
-     * has, so the app reloads the playlist in use; [updateChannel] then hands the new entry over.
+     * Emits when the channel on screen keeps being refused or not found. The playlist may have a new
+     * address for it, or a renewed access token in it, which only a fresh copy of the playlist has,
+     * so the app reloads the playlist in use; [updateChannel] then hands the new entry over.
      */
     private val _playlistReloadWanted = MutableSharedFlow<Unit>(
         extraBufferCapacity = 1,
@@ -502,8 +502,8 @@ class FluxPlayerController(
     /**
      * The channel did not come back: the prompt says why (REQ-REC-005), and FluxTV goes on trying in
      * the background without the Viewer pressing anything, however long it takes (REQ-BUF-006,
-     * REQ-REC-003). A channel the provider keeps refusing or no longer has gets the playlist
-     * reloaded too, in case it moved.
+     * REQ-REC-003). A channel its server keeps refusing or no longer has gets the playlist reloaded
+     * too, in case it moved.
      */
     private fun failAndKeepTrying(message: String, reason: String, problem: PlaybackProblem) {
         updateStatus(PlaybackPhase.FAILED, message, prompt = true, problem = problem)
@@ -520,10 +520,11 @@ class FluxPlayerController(
     /**
      * One round of background healing, [delayMs] from now; a round that fails schedules the next.
      * Each round is one try, not another series of quick retries, so the prompt stays steady rather
-     * than coming and going, and a provider that refuses the channel gets one connection every
-     * [HEAL_ROUND_MS] (REQ-REC-007): a flood of reconnects can get a subscription blocked.
+     * than coming and going, and a server that refuses the channel gets one connection every
+     * [HEAL_ROUND_MS] (REQ-REC-007): a flood of reconnects can get this TV blocked by the server,
+     * or a paid account suspended.
      *
-     * Each round starts the channel afresh: new connections to the provider in place of ones that may
+     * Each round starts the channel afresh: new connections to the server in place of ones that may
      * have died quietly, and a new player ([rebuildPlayer]). It tries whatever Android says about the
      * network: a TV that wrongly reports none would otherwise never heal, and a network that is
      * really down costs one failed connection per round. While FluxTV is off screen the round waits

@@ -291,9 +291,10 @@ sections) is met in this implementation.
   instead of crashing every start.
 - **REQ-REC-001..005** — Detect→Recover→Inform; bounded backoff; success returns silently; a simple
   "Try again / change channel" prompt only when exhausted (`RecoveryOverlay`), whose heading says
-  why (`PlaybackProblem`): no network, a connection that keeps failing, the provider refusing the
-  channel (HTTP 401/402/403/429/458/509, such as another TV on the same subscription), the provider
-  not having it (404/410), this TV unable to play it, or else temporarily unavailable. Behind the
+  why (`PlaybackProblem`): no network, a connection that keeps failing, the channel's server
+  refusing it (HTTP 401/402/403/429/458/509: a channel only shown in its own country, an expired
+  link or token, a server that only serves its own site or player, or a paid account's limits), the
+  server not having it at that address (404/410), this TV unable to play it, or else temporarily unavailable. Behind the
   prompt FluxTV keeps healing on its own, one try every 30 s for as long as the channel is on
   screen (`scheduleHealRound`): each try builds a new player and opens new connections, whatever
   Android says about the network (an HTTP answer counts as proof the network works); a channel that

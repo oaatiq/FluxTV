@@ -9,8 +9,11 @@ enum class ErrorKind { NETWORK, SOURCE, DECODER, DRM, NO_NETWORK, UNKNOWN }
 /**
  * Why a channel could not be brought back, as the recovery prompt says it: [title] is its heading,
  * [hint] the line under it. Each says what went wrong in the Viewer's words, so the prompt itself
- * tells a TV that has no network from a provider that refuses the channel or a TV that cannot decode
+ * tells a TV that has no network from a server that refuses the channel or a TV that cannot decode
  * it; until these, every case had the same heading, "This channel is temporarily unavailable."
+ *
+ * They name the channel's server, not a provider or a subscription: in a free playlist each channel
+ * comes from its own server, usually its broadcaster's, and nobody has an account to run out.
  */
 enum class PlaybackProblem(val title: String, val hint: String) {
     NO_NETWORK(
@@ -19,19 +22,19 @@ enum class PlaybackProblem(val title: String, val hint: String) {
     ),
     CONNECTION(
         "The connection to this channel keeps failing.",
-        "The provider's server is not answering, or the connection is too slow. FluxTV keeps trying."
+        "Its server is not answering, or the connection is too slow. FluxTV keeps trying."
     ),
     REFUSED(
-        "The provider refused this channel.",
-        "Another TV may be using the same subscription, or the subscription has ended."
+        "This channel's server refused to play it.",
+        "It may only be shown in its own country, or its link may have expired. FluxTV keeps trying."
     ),
     GONE(
-        "The provider does not have this channel.",
-        "It may have moved, or been removed from the playlist."
+        "This channel is no longer at its address.",
+        "It may have moved, or stopped broadcasting. FluxTV keeps trying."
     ),
     UNAVAILABLE(
         "This channel is temporarily unavailable.",
-        "The provider is not sending it right now. FluxTV keeps trying."
+        "Its server is not sending it right now. FluxTV keeps trying."
     ),
     CANNOT_PLAY(
         "This TV can't play this channel.",
@@ -69,9 +72,11 @@ object ErrorMapper {
     const val NO_NETWORK = "No network connection."
 
     /**
-     * HTTP answers with which a provider refuses this TV rather than the channel being missing:
-     * wrong or expired credentials (401, 402), a ban or too many TVs on one subscription (403, 429,
-     * and 458 and 509, which some IPTV panels send for "maximum connections reached").
+     * HTTP answers with which a channel's server refuses this TV rather than the channel being
+     * missing. With a free playlist: a channel only shown in its own country, a link whose token has
+     * expired, or a server that only serves its own website or player (403), or too many requests
+     * (429). With a paid service also wrong or expired credentials (401, 402) and too many TVs on one
+     * account (403, and 458 and 509, which some IPTV panels send for "maximum connections reached").
      */
     private val REFUSED_STATUSES = setOf(401, 402, 403, 429, 458, 509)
 

@@ -978,11 +978,11 @@ class AppViewModel(
         outcome.tooLarge -> "The playlist is too large for this TV's memory."
         outcome.noChannels -> "The link opened, but there are no channels in it. Check that it is an M3U playlist link."
         outcome.httpCode == 401 || outcome.httpCode == 403 ->
-            "The provider refused the link. Check the user name and password in it, and that the subscription is active."
+            "The server refused the link. If it has a user name and password in it, check them, and that the account is still active."
         outcome.httpCode == 404 || outcome.httpCode == 410 ->
-            "The provider has no playlist at this link. Check that the link is complete."
+            "There is no playlist at this link. Check that the link is complete."
         outcome.httpCode != null ->
-            "The provider's server did not send the playlist (error ${outcome.httpCode}). Try again later."
+            "The server did not send the playlist (error ${outcome.httpCode}). Try again later."
         else -> "The TV could not open the link. Check that it is complete, and that the TV is connected to the internet."
     }
 

@@ -285,7 +285,7 @@ class PhoneSetupServer(
         <form method="post" action="/$token/send" accept-charset="utf-8">
         <label for="link">Playlist link</label>
         <textarea id="link" name="link" inputmode="url" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" required placeholder="https://…">${esc(link)}</textarea>
-        <p class="hint">Paste the M3U link from your TV provider.</p>
+        <p class="hint">Paste the link to your M3U playlist.</p>
         <label for="name">Name <span class="opt">(optional)</span></label>
         <input id="name" name="name" maxlength="$MAX_NAME_LENGTH" autocomplete="off" placeholder="For example: Sports package" value="${esc(name)}">
         <p class="hint">Shown only in the TV's Settings, to tell playlists apart.</p>

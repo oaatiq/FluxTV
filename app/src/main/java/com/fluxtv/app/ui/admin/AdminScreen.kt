@@ -782,9 +782,9 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             FluxChip("Every 24 hours", state.settings.refreshIntervalHours == 24) { vm.setRefreshHours(24) }
         }
 
-        BasicText("Player name sent to the provider", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText("Player name sent to servers", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         BasicText(
-            "Some providers only serve players they know: enter the name they give (for example " +
+            "Some servers only serve players they know: enter the name they give (for example " +
                 "VLC/3.0.20). Empty: $DEFAULT_USER_AGENT. A channel's own entry in the playlist still comes first.",
             style = TextStyle(color = FluxMuted, fontSize = 15.sp)
         )

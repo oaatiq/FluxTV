@@ -87,7 +87,7 @@ apps.
 
 1. Launch FluxTV. With no playlist configured it opens **Settings → Playlists** automatically.
 2. Choose **Add channels using your phone** and scan the QR code with the phone's camera. The phone
-   opens a page from the TV itself (nothing to install): paste the provider's **M3U link**, press
+   opens a page from the TV itself (nothing to install): paste the **M3U link**, press
    **Send to TV**, and both the phone and the TV say whether it worked. The phone has to be on the
    same Wi-Fi as the TV. Without a phone, **Type a link on the TV** takes the link (or a local file
    path) from the remote or a keyboard, and has a **Use sample test playlist** button for a quick
@@ -96,9 +96,9 @@ apps.
    to live TV on the last channel, with no phone needed.
 
 If the playlist cannot be loaded and none was saved before (the TV started before its network was
-up, or the provider is down), TV shows *Can't load the channels* and FluxTV keeps trying: as soon as
-the network is back, and otherwise at growing intervals up to every 15 minutes. TV starts on its own
-when the channels arrive. Meanwhile OK opens Settings, to check the playlist.
+up, or the playlist's server is down), TV shows *Can't load the channels* and FluxTV keeps trying:
+as soon as the network is back, and otherwise at growing intervals up to every 15 minutes. TV starts
+on its own when the channels arrive. Meanwhile OK opens Settings, to check the playlist.
 
 HTTP (cleartext) playlists and streams are allowed, since IPTV feeds are frequently plain HTTP.
 Channels can be HLS, DASH or plain MPEG-TS over HTTP, as long as they are not DRM-protected. An
@@ -365,23 +365,25 @@ Optionally protect it with a **PIN** (Preferences). Sections:
   marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link,
   set its programme guide link, or delete it. See [Playlists](#playlists) below.
 - **Channels & favorites** — curate favorites (OK toggles ★) and enable *favorites-only* Easy Mode,
-  so a 2,000-channel subscription can show your grandfather just the handful he watches. Favorites
+  so a 2,000-channel playlist can show your grandfather just the handful he watches. Favorites
   belong to the playlist in use; a playlist with none shows all its channels even in favorites-only
   mode, rather than nothing.
 - **Preferences** — favorites-only, text size on TV (Normal / Large / Extra large), even volume
   between channels, max quality (Auto / 720p / 1080p), refresh-rate matching (switching it off puts
   the TV back in its own mode at once), auto-refresh interval, the **player
-  name** sent to the provider (User-Agent: some providers only serve players they know; empty means
+  name** sent to servers (User-Agent: some servers only serve players they know; empty means
   `FluxTV/1.0`; it is used for every saved playlist), and the Settings PIN.
 - **Diagnostics** — live stream health and a persisted event history for troubleshooting: channel
   reachability, resolution, frame rate, **hardware vs software decoding**, codecs, bitrate,
   bandwidth, buffered duration, dropped frames, buffering events, recoveries, channel startup
   time and the volume levelling gain. If FluxTV ever closes by itself, the next start adds a *crash*
   line saying what failed and where; a picture that froze while the sound played on is restarted
-  and noted under *decoder*. Each *error* line says what caused it: the HTTP status the provider
-  answered (`HTTP 403 Forbidden`: refused, often another TV on the same subscription; `HTTP 404`:
-  no such channel; `HTTP 5xx`: the provider's server failing), or what failed underneath, such as
-  a certificate the TV does not trust or a server name that does not resolve. *recovery* lines show
+  and noted under *decoder*. Each *error* line says what caused it: the HTTP status the channel's
+  server answered (`HTTP 403 Forbidden`: refused, such as a channel only shown in its own country,
+  a link whose token has expired, a server that only serves its own website or player, or with a
+  paid service an account in use on too many TVs; `HTTP 404`: nothing at that address any more;
+  `HTTP 5xx`: the server failing), or what failed underneath, such as a certificate the TV does
+  not trust or a server name that does not resolve. *recovery* lines show
   the healing behind the error screen: each background try (with a new player and connections),
   each playlist reload it asked for, and *playing again after N background tries* once it worked.
 
@@ -402,15 +404,15 @@ playlist name, link or choice, and the Viewer is never asked to pick one.
 - **Each playlist keeps its own** favorites and last channel, so switching away and back finds them
   as they were. The playlist in use is remembered across restarts, and only it is refreshed.
 - **Channel numbers stay put.** A refresh keeps each channel's number, favorite and last-channel
-  mark; channels the provider adds get the next numbers after the last one, and removed ones go
-  without moving the others. This holds when the provider moves to another server too, within the
+  mark; channels the playlist adds get the next numbers after the last one, and removed ones go
+  without moving the others. This holds when the channels move to another server too, within the
   same link or through **Change link**: a channel it still has is recognised by its name and its
   address apart from the server (`http://server:port`), or else by its name and category. A new
   link to a list that is mostly another one starts again at #1.
 - **The playlist in use cannot be deleted**: put another one in use first.
 - Playback trouble never switches playlists by itself; FluxTV keeps retrying the one in use. A
-  channel the provider keeps refusing or no longer has does get the playlist in use reloaded (at
-  most every 30 minutes), in case the provider moved it to a new address or renewed its token.
+  channel whose server keeps refusing it or no longer has it does get the playlist in use reloaded
+  (at most every 30 minutes), in case the playlist now has a new address or token for it.
 - Updating from a version with a single playlist keeps it, as the first saved playlist and the one in
   use, with its favorites and last channel.
 
