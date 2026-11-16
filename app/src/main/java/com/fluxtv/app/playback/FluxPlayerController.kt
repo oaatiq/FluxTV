@@ -15,6 +15,8 @@ import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import com.fluxtv.app.BootTrace
 import com.fluxtv.app.data.cache.DiagnosticsStore
 import com.fluxtv.app.data.model.Channel
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -122,6 +125,22 @@ class FluxPlayerController(
     /** When a playlist reload was last asked for, see [requestPlaylistReload]. */
     private var lastPlaylistReloadMs = -PLAYLIST_RELOAD_MIN_GAP_MS
 
+    /**
+     * When Android last reported the network gone, [NO_LOSS] while it reports one; and whether data
+     * that came in for the channel since then, over a request made after it, proved that report
+     * wrong (see [watchNetwork]).
+     */
+    private var networkLostAtMs = NO_LOSS
+    private var networkLossDisproved = false
+
+    /**
+     * When the stall under way started, 0 when there is none; and when the noticeable stalls of the
+     * channel on screen happened lately, for [PlaybackStatus.slowConnection] (see [noteStall]).
+     */
+    private var stallStartedMs = 0L
+    private val recentStalls = ArrayDeque<Long>()
+    private var slowConnectionJob: Job? = null
+
     private val _status = MutableStateFlow(PlaybackStatus())
     val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
 
@@ -161,11 +180,7 @@ class FluxPlayerController(
     val pausedBySystem: StateFlow<Boolean> = _pausedBySystem.asStateFlow()
 
     init {
-        scope.launch {
-            networkMonitor.status.collect { status ->
-                if (status == NetworkStatus.AVAILABLE) onNetworkRestored()
-            }
-        }
+        scope.launch { watchNetwork() }
     }
 
     // ---- public control ----
@@ -208,6 +223,11 @@ class FluxPlayerController(
         frozenPictureWatch?.cancel()
         healRound = 0
         lastHealFailure = null
+        stallStartedMs = 0L
+        // Stalls and the picture belong to the channel they happened on; the network does not.
+        recentStalls.clear()
+        slowConnectionJob?.cancel()
+        _status.value = _status.value.copy(slowConnection = false, pictureProblem = null)
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -295,6 +315,7 @@ class FluxPlayerController(
         slowRetryJob?.cancel()
         stabilityJob?.cancel()
         frozenPictureWatch?.cancel()
+        stallStartedMs = 0L
         p.stop()
         if (currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
     }
@@ -304,6 +325,7 @@ class FluxPlayerController(
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
         frozenPictureWatch?.cancel()
+        slowConnectionJob?.cancel()
         bundle?.player?.let {
             it.removeListener(playerListener)
             it.removeAnalyticsListener(analyticsListener)
@@ -351,6 +373,43 @@ class FluxPlayerController(
         old.player.release()
         bundle = null
         ensurePlayer()
+    }
+
+    /**
+     * Follows what Android says about the network. A network that comes back restarts a channel that
+     * failed meanwhile ([onNetworkRestored]). One that goes is said on screen
+     * ([PlaybackStatus.networkLost]) once it has been gone for [NETWORK_LOSS_GRACE_MS] — a Wi-Fi that
+     * drops for a moment as it reconnects is not worth a word — and for as long as it stays gone,
+     * from before the picture stops: a channel plays on for up to a minute from what it has
+     * buffered, and the Viewer then already knows why it stops, and that it is not the TV.
+     *
+     * A TV can report no network wrongly. A stream load that started after the report and completed
+     * proves the network works (an HLS or DASH channel makes one every few seconds), and keeps the
+     * notice off until Android reports a new loss (see the analytics listener's onLoadCompleted).
+     */
+    private suspend fun watchNetwork() {
+        networkMonitor.status.collectLatest { status ->
+            if (status == NetworkStatus.AVAILABLE) {
+                networkLostAtMs = NO_LOSS
+                if (_status.value.networkLost) {
+                    logEvent("network", "Network connection back")
+                    setNetworkLost(false)
+                }
+                onNetworkRestored()
+            } else {
+                networkLostAtMs = SystemClock.elapsedRealtime()
+                networkLossDisproved = false
+                delay(NETWORK_LOSS_GRACE_MS)
+                if (!networkLossDisproved) {
+                    logEvent("network", "Android reports no network connection: said on screen until it is back")
+                    setNetworkLost(true)
+                }
+            }
+        }
+    }
+
+    private fun setNetworkLost(lost: Boolean) {
+        if (_status.value.networkLost != lost) _status.value = _status.value.copy(networkLost = lost)
     }
 
     private fun onNetworkRestored() {
@@ -491,7 +550,8 @@ class FluxPlayerController(
             return
         }
         val delayMs = recovery.nextDelayMs()
-        updateStatus(PlaybackPhase.RECOVERING, message, prompt = false, attempt = recovery.attempt)
+        // The problem goes with the message, for its icon: why, recognisable without reading.
+        updateStatus(PlaybackPhase.RECOVERING, message, prompt = false, attempt = recovery.attempt, problem = problem)
         retryJob?.cancel()
         retryJob = scope.launch {
             delay(delayMs)
@@ -583,10 +643,49 @@ class FluxPlayerController(
             val p = bundle?.player ?: return@launch
             // Off screen nobody is watching; onResume() arms it again if the stall is still there.
             if (p.playbackState == Player.STATE_BUFFERING && onScreen) {
+                if (stallStartedMs > 0L) {
+                    stallStartedMs = 0L
+                    noteStall()
+                }
                 logEvent("buffering", "Prolonged buffering on ${currentChannel?.name}")
                 scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "prolonged buffering", PlaybackProblem.CONNECTION)
             }
         }
+    }
+
+    /**
+     * A stall the Viewer noticed (it lasted [NOTICEABLE_STALL_MS] or more). [SLOW_STALLS] of them
+     * within [SLOW_WINDOW_MS] are said on screen ([PlaybackStatus.slowConnection]): the connection is
+     * too slow for this channel, which is why it keeps stopping, and not the TV. The adaptive
+     * quality goes on lowering the picture by itself meanwhile (REQ-ADP). The notice goes once the
+     * channel has played for a whole window without a noticeable stall.
+     */
+    private fun noteStall() {
+        val now = SystemClock.elapsedRealtime()
+        recentStalls.addLast(now)
+        while (now - recentStalls.first() > SLOW_WINDOW_MS) recentStalls.removeFirst()
+        if (recentStalls.size >= SLOW_STALLS && !_status.value.slowConnection) {
+            logEvent(
+                "buffering",
+                "${currentChannel?.name} stopped to load ${recentStalls.size} times in ${SLOW_WINDOW_MS / 60_000} min: " +
+                    "slow connection said on screen"
+            )
+            _status.value = _status.value.copy(slowConnection = true)
+        }
+        if (!_status.value.slowConnection) return
+        slowConnectionJob?.cancel()
+        slowConnectionJob = scope.launch {
+            delay(SLOW_WINDOW_MS)
+            recentStalls.clear()
+            _status.value = _status.value.copy(slowConnection = false)
+        }
+    }
+
+    /** [problem] said in the middle of the picture, or null; [only]: change it only from this one. */
+    private fun setPictureProblem(problem: PlaybackProblem?, only: PlaybackProblem? = null) {
+        val current = _status.value.pictureProblem
+        if (current == problem || (only != null && current != only)) return
+        _status.value = _status.value.copy(pictureProblem = problem)
     }
 
     /**
@@ -617,8 +716,12 @@ class FluxPlayerController(
      * nothing reports an error. While a channel plays on screen with its picture, this checks every
      * few seconds that new frames keep coming. When none has come for [FROZEN_PICTURE_MS] while
      * playback moved on, the decoder is let go and the channel prepared again, which builds a new
-     * one; at most [MAX_FROZEN_RESTARTS] times per tune. A picture that was never coming in steadily,
-     * such as a radio station's still image, is left alone.
+     * one: straight away the first [MAX_FROZEN_RESTARTS] times per tune. After those, the picture
+     * that stops again is said on screen ([PlaybackProblem.FROZEN]) and restarted once it has stayed
+     * stopped for [HEAL_ROUND_MS], as background healing does, so a decoder that always freezes can
+     * neither loop nor be left frozen for good. Pictures that start coming again by themselves take
+     * the notice away. A picture that was never coming in steadily, such as a radio station's still
+     * image, is left alone.
      */
     private fun startFrozenPictureWatch() {
         frozenPictureWatch?.cancel()
@@ -633,13 +736,18 @@ class FluxPlayerController(
                 val counters = p.videoDecoderCounters
                 if (!onScreen || !p.isPlaying || counters == null || !p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)) {
                     lastFrames = -1 // paused, buffering, sound only: start counting again afterwards
+                    // Whatever stopped playback now says so itself (the dots of a stall, say).
+                    setPictureProblem(null, only = PlaybackProblem.FROZEN)
                     continue
                 }
                 counters.ensureUpdated()
                 val frames = counters.renderedOutputBufferCount
                 val now = SystemClock.elapsedRealtime()
                 if (lastFrames < 0 || frames != lastFrames) {
-                    if (lastFrames in 0 until frames) framesSeen += frames - lastFrames
+                    if (lastFrames in 0 until frames) {
+                        framesSeen += frames - lastFrames
+                        setPictureProblem(null, only = PlaybackProblem.FROZEN) // moving again
+                    }
                     lastFrames = frames
                     lastFrameAtMs = now
                     positionAtLastFrame = p.currentPosition
@@ -647,11 +755,22 @@ class FluxPlayerController(
                 }
                 val frozenFor = now - lastFrameAtMs
                 val playedOn = p.currentPosition - positionAtLastFrame
-                if (frozenFor >= FROZEN_PICTURE_MS && playedOn >= FROZEN_PICTURE_MS * 2 / 3 &&
-                    framesSeen >= MIN_FRAMES_BEFORE_FREEZE
-                ) {
+                if (frozenFor < FROZEN_PICTURE_MS || playedOn < FROZEN_PICTURE_MS * 2 / 3 ||
+                    framesSeen < MIN_FRAMES_BEFORE_FREEZE
+                ) continue
+                if (frozenRestarts < MAX_FROZEN_RESTARTS || frozenFor >= FROZEN_PICTURE_MS + HEAL_ROUND_MS) {
                     restartFrozenPicture()
                     return@launch
+                }
+                if (_status.value.pictureProblem != PlaybackProblem.FROZEN) {
+                    if (frozenRestarts == MAX_FROZEN_RESTARTS) {
+                        logEvent(
+                            "decoder",
+                            "The picture of ${currentChannel?.name} keeps freezing on this TV: said on screen, " +
+                                "and restarted every ${HEAL_ROUND_MS / 1000} s while it stays stopped"
+                        )
+                    }
+                    setPictureProblem(PlaybackProblem.FROZEN)
                 }
             }
         }
@@ -660,14 +779,15 @@ class FluxPlayerController(
     private fun restartFrozenPicture() {
         val p = bundle?.player ?: return
         val channel = currentChannel ?: return
-        if (frozenRestarts >= MAX_FROZEN_RESTARTS) {
-            logEvent("decoder", "The picture of ${channel.name} keeps freezing on this TV: no more restarts until it is tuned again")
-            return
-        }
         frozenRestarts++
-        logEvent("decoder", "The picture of ${channel.name} froze while the sound played on: restarting its decoder")
+        val quick = frozenRestarts <= MAX_FROZEN_RESTARTS
+        if (quick) logEvent("decoder", "The picture of ${channel.name} froze while the sound played on: restarting its decoder")
+        setPictureProblem(null, only = PlaybackProblem.FROZEN)
+        // The moving dots while it restarts, as for any wait; nor does it count as a stall.
+        updateStatus(PlaybackPhase.RECOVERING, message = null, prompt = false)
         p.stop() // lets the decoder go: prepared again, the channel gets a new one
-        reprepareCurrent("picture froze")
+        // The later restarts were announced once, when they began (see startFrozenPictureWatch).
+        reprepareCurrent(if (quick) "picture froze" else null)
     }
 
     /**
@@ -786,8 +906,10 @@ class FluxPlayerController(
                     stabilityJob?.cancel()
                     startBufferingWatchdog()
                     if (_status.value.phase == PlaybackPhase.PLAYING) {
-                        // Short transient disturbances don't get an intrusive message (REQ-BUF-003).
+                        // Short transient disturbances don't get an intrusive message (REQ-BUF-003):
+                        // the screen shows only the moving dots, once it has lasted a moment.
                         updateStatus(PlaybackPhase.BUFFERING, message = null, prompt = false)
+                        if (onScreen) stallStartedMs = SystemClock.elapsedRealtime()
                     }
                 }
 
@@ -795,6 +917,10 @@ class FluxPlayerController(
                     bundle?.channelSwitch?.pending = false
                     bufferingWatchdog?.cancel()
                     slowRetryJob?.cancel()
+                    if (stallStartedMs > 0L) {
+                        if (SystemClock.elapsedRealtime() - stallStartedMs >= NOTICEABLE_STALL_MS) noteStall()
+                        stallStartedMs = 0L
+                    }
                     if (loadAsHls) currentChannel?.let { knownHls.add(it.url); knownPlain.remove(it.url) }
                     if (healRound > 0) {
                         val tries = if (healRound == 1) "1 background try" else "$healRound background tries"
@@ -828,6 +954,7 @@ class FluxPlayerController(
         override fun onPlayerError(error: PlaybackException) {
             bufferingWatchdog?.cancel()
             stabilityJob?.cancel()
+            stallStartedMs = 0L // an error is not a stall: it is said as itself
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && rejoinLive()) return
             if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED && tryAsHls()) return
             // Not an HLS playlist after all: the address is opened as it is again, now or by the retries.
@@ -853,7 +980,13 @@ class FluxPlayerController(
                 // player need not raise an error for that and may just show nothing, so FluxTV says it.
                 cannotPlay("nothing in this stream that this TV can play (DRM-protected, or unsupported formats)")
             } else if (!video && tracks.containsType(C.TRACK_TYPE_VIDEO)) {
-                logEvent("decoder", "This TV cannot decode the picture of ${currentChannel?.name}: sound only")
+                // A black screen with sound looks broken: it is said in the middle of the picture.
+                if (_status.value.pictureProblem != PlaybackProblem.SOUND_ONLY) {
+                    logEvent("decoder", "This TV cannot decode the picture of ${currentChannel?.name}: sound only")
+                }
+                setPictureProblem(PlaybackProblem.SOUND_ONLY)
+            } else {
+                setPictureProblem(null, only = PlaybackProblem.SOUND_ONLY)
             }
         }
 
@@ -866,6 +999,23 @@ class FluxPlayerController(
     }
 
     private val analyticsListener = object : AnalyticsListener {
+        /**
+         * A load of the stream (an HLS or DASH segment or playlist) that started after Android
+         * reported the network gone, and completed: the network works, whatever Android says, so
+         * it is not said on screen (see [watchNetwork]).
+         */
+        override fun onLoadCompleted(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData
+        ) {
+            if (networkLostAtMs == NO_LOSS || networkLossDisproved) return
+            if (loadEventInfo.elapsedRealtimeMs - loadEventInfo.loadDurationMs <= networkLostAtMs) return
+            networkLossDisproved = true
+            logEvent("network", "Android reports no network, but the channel's data still comes in: not said on screen")
+            setNetworkLost(false)
+        }
+
         override fun onDroppedVideoFrames(
             eventTime: AnalyticsListener.EventTime,
             droppedFrames: Int,
@@ -960,7 +1110,10 @@ class FluxPlayerController(
         /** Frames that must have come in steadily before a stop counts as a freeze (2 s at 25 fps). */
         const val MIN_FRAMES_BEFORE_FREEZE = 50
 
-        /** Restarts for a frozen picture per tune, so a decoder that always freezes cannot loop. */
+        /**
+         * Restarts for a frozen picture straight away, per tune; after them, one at most every
+         * [HEAL_ROUND_MS], so a decoder that always freezes cannot loop.
+         */
         const val MAX_FROZEN_RESTARTS = 3
 
         /** The pause between background healing rounds, see [scheduleHealRound]. */
@@ -971,5 +1124,18 @@ class FluxPlayerController(
 
         /** The least time between two playlist reloads asked for by healing. */
         const val PLAYLIST_RELOAD_MIN_GAP_MS = 30 * 60_000L
+
+        /** [networkLostAtMs] while Android reports a network. */
+        const val NO_LOSS = Long.MAX_VALUE
+
+        /** How long the network has to be gone before the screen says so, see [watchNetwork]. */
+        const val NETWORK_LOSS_GRACE_MS = 3_000L
+
+        /** A stall at least this long is one the Viewer saw, and counts towards a slow connection. */
+        const val NOTICEABLE_STALL_MS = 1_000L
+
+        /** This many noticeable stalls within the window are said on screen as a slow connection. */
+        const val SLOW_STALLS = 3
+        const val SLOW_WINDOW_MS = 2 * 60_000L
     }
 }

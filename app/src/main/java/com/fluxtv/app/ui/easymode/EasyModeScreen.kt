@@ -46,10 +46,16 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
  * keeps running underneath the channel list (REQ-CH-003). Back steps back like other IPTV players:
  * watching -> the two-pane list on the current channel's category -> its categories column -> leave
  * the app. The last channel is remembered, so the next launch resumes it.
+ *
+ * Whatever keeps the channel from playing normally is on screen while it lasts: in the middle, a
+ * [StreamNotice] (a slow start or a stall, a retry and why, a picture that stopped, sound only, a
+ * pause), or the reconnecting screen once retries are used up; at the top right, a lost or slow
+ * connection ([ConnectionNotice]), also over the channel list and the number entry.
  */
 @Composable
 fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     val player by vm.controller.activePlayer.collectAsStateWithLifecycle()
+    val pausedBySystem by vm.controller.pausedBySystem.collectAsStateWithLifecycle()
     val guide by vm.guide.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -65,16 +71,20 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
         }
 
         val channel = state.currentChannel
-        val showRecovery = state.playback.showRecoveryPrompt && state.overlay == EasyOverlay.NONE
+        val watching = state.overlay == EasyOverlay.NONE
+        val showRecovery = state.playback.showRecoveryPrompt && watching
+        val notice = rememberStreamNotice(state.playback, pausedBySystem)
+        val showBanner = state.showInfoBanner && channel != null && watching && !showRecovery
+        // Not twice: a retry and the reconnecting screen show the connection's icon themselves.
+        val connection = state.playback.connectionNotice()
+            ?.takeUnless { watching && (showRecovery || notice is StreamNotice.Retrying) }
 
-        if (state.showInfoBanner && channel != null && state.overlay == EasyOverlay.NONE && !showRecovery) {
-            ChannelInfoBanner(channel, guide)
-            ClockOverlay()
-        }
+        if (showBanner) ChannelInfoBanner(channel, guide)
+        // The channel list says it in its own header, the top right being under its panel.
+        val cornerConnection = connection.takeIf { state.overlay != EasyOverlay.CHANNEL_LIST }
+        if (showBanner || cornerConnection != null) TopRightOverlay(clock = showBanner, connection = cornerConnection)
 
-        if (state.overlay == EasyOverlay.NONE && !showRecovery && state.playback.userMessage != null) {
-            StatusOverlay(state.playback.userMessage!!)
-        }
+        if (watching && !showRecovery && notice != null) StreamNoticeOverlay(notice)
 
         if (showRecovery) {
             val problem = state.playback.problem ?: PlaybackProblem.UNAVAILABLE
@@ -100,7 +110,8 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
                     onSelect = vm::selectChannel,
                     onToggleFavorite = vm::toggleFavorite,
                     onOpenSettings = vm::requestAdmin,
-                    guide = guide.takeIf { state.settings.programmeInList }
+                    guide = guide.takeIf { state.settings.programmeInList },
+                    connection = connection
                 )
             }
         }

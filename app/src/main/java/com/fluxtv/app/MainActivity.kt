@@ -320,6 +320,9 @@ class MainActivity : ComponentActivity() {
                             when {
                                 held >= 2000L -> viewModel.requestAdmin()
                                 state.playback.showRecoveryPrompt -> viewModel.retryCurrent()
+                                // Paused for another app's sound: the screen shows OK as "Play".
+                                viewModel.controller.pausedBySystem.value && state.currentChannel != null ->
+                                    viewModel.resumePlayback()
                                 // No channels yet, or none could load: no list to open, and Settings
                                 // is where that is fixed. The screen shows OK as "Open Settings".
                                 state.channels.isEmpty() -> viewModel.requestAdmin()

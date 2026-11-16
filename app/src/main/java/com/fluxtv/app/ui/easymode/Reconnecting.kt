@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -248,10 +249,11 @@ fun WaitingDots(dotSize: Dp, modifier: Modifier = Modifier, color: Color = FluxA
 
 /**
  * A picture for each reason, recognisable without reading: Wi-Fi crossed out for no network, faint
- * Wi-Fi for a connection that keeps failing, a padlock for a provider that refuses the channel, a
- * magnifier for one that does not have it, a TV for a decoder that failed (crossed out when it
- * cannot play the channel at all), and "i" for the rest. Drawn here, as the icon set FluxTV carries
- * has no Wi-Fi or TV.
+ * Wi-Fi for a connection that keeps failing (or too slow), a padlock for a provider that refuses the
+ * channel, a magnifier for one that does not have it, a TV for a decoder that failed (crossed out
+ * when it cannot play the channel at all, with the pause sign on its screen when its picture
+ * stopped), a loudspeaker for sound only, the pause sign for a channel paused, and "i" for the
+ * rest. Drawn here, as the icon set FluxTV carries has no Wi-Fi, TV, loudspeaker or pause sign.
  */
 @Composable
 fun ProblemIcon(problem: PlaybackProblem, size: Dp, color: Color) {
@@ -264,6 +266,12 @@ fun ProblemIcon(problem: PlaybackProblem, size: Dp, color: Color) {
         PlaybackProblem.UNAVAILABLE -> Image(Icons.Filled.Info, null, modifier, colorFilter = ColorFilter.tint(color))
         PlaybackProblem.DECODER -> Canvas(modifier) { drawTv(color, crossed = false) }
         PlaybackProblem.CANNOT_PLAY -> Canvas(modifier) { drawTv(color, crossed = true) }
+        PlaybackProblem.FROZEN -> Canvas(modifier) {
+            drawTv(color, crossed = false)
+            drawPause(color, centerY = 0.45f, height = 0.24f)
+        }
+        PlaybackProblem.SOUND_ONLY -> Canvas(modifier) { drawSpeaker(color) }
+        PlaybackProblem.PAUSED -> Canvas(modifier) { drawPause(color, centerY = 0.5f, height = 0.64f) }
     }
 }
 
@@ -304,6 +312,57 @@ private fun DrawScope.drawTv(color: Color, crossed: Boolean) {
     drawLine(color, Offset(left + w * 0.5f, top + w * 0.72f), Offset(left + w * 0.5f, top + w * 0.84f), stroke)
     drawLine(color, Offset(left + w * 0.32f, top + w * 0.86f), Offset(left + w * 0.68f, top + w * 0.86f), stroke, StrokeCap.Round)
     if (crossed) drawSlash(color, stroke)
+}
+
+/**
+ * The pause sign: two upright bars, [height] of the icon tall around [centerY] (both in fractions of
+ * its size), small on a TV's screen or alone at full size.
+ */
+private fun DrawScope.drawPause(color: Color, centerY: Float, height: Float) {
+    val w = size.minDimension
+    val left = (size.width - w) / 2
+    val top = (size.height - w) / 2
+    val bar = w * height * 0.3f
+    val gap = bar * 0.8f
+    listOf(-(gap / 2 + bar), gap / 2).forEach { dx ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(left + w / 2 + dx, top + w * (centerY - height / 2)),
+            size = Size(bar, w * height),
+            cornerRadius = CornerRadius(bar * 0.25f)
+        )
+    }
+}
+
+/** A loudspeaker with two sound waves: the sound plays, and nothing else does. */
+private fun DrawScope.drawSpeaker(color: Color) {
+    val w = size.minDimension
+    val left = (size.width - w) / 2
+    val top = (size.height - w) / 2
+    fun at(x: Float, y: Float) = Offset(left + w * x, top + w * y)
+    val body = Path().apply {
+        at(0.1f, 0.38f).let { moveTo(it.x, it.y) }
+        at(0.26f, 0.38f).let { lineTo(it.x, it.y) }
+        at(0.48f, 0.18f).let { lineTo(it.x, it.y) }
+        at(0.48f, 0.82f).let { lineTo(it.x, it.y) }
+        at(0.26f, 0.62f).let { lineTo(it.x, it.y) }
+        at(0.1f, 0.62f).let { lineTo(it.x, it.y) }
+        close()
+    }
+    drawPath(body, color)
+    val center = at(0.5f, 0.5f)
+    listOf(0.17f, 0.33f).forEach { r ->
+        val radius = r * w
+        drawArc(
+            color = color,
+            startAngle = -45f,
+            sweepAngle = 90f,
+            useCenter = false,
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = Size(radius * 2, radius * 2),
+            style = Stroke(w * 0.08f, cap = StrokeCap.Round)
+        )
+    }
 }
 
 /** A stroke from top left to bottom right, with a gap cut around it so it reads over the drawing. */

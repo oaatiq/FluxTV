@@ -166,6 +166,8 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
     val channel = state.currentChannel
     val isFavorite = channel != null && channel.stableId in state.favorites
     val recovery = state.playback.showRecoveryPrompt
+    // Android's pause gets the Play button below rather than a notice.
+    val notice = rememberStreamNotice(state.playback, pausedBySystem = false)
     val select: (Channel) -> Unit = {
         focusManager.clearFocus()
         vm.selectChannel(it)
@@ -219,7 +221,6 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
                     NoChannels(state, onSettings = vm::requestAdmin, Modifier.fillMaxSize().background(Scrim).overscan())
                 }
 
-                val message = state.playback.userMessage
                 val problem = state.playback.problem ?: PlaybackProblem.UNAVAILABLE
                 val listOpen = state.overlay != EasyOverlay.NONE
                 when {
@@ -238,7 +239,21 @@ fun TouchEasyModeScreen(state: UiState, vm: AppViewModel, onFullscreen: (Boolean
                         modifier = Modifier.align(Alignment.Center),
                         size = 72.dp
                     ) { Glyph(Icons.Filled.PlayArrow, FluxOnSurface, 44.dp) }
-                    message != null && !listOpen -> StatusPill(message, Modifier.align(Alignment.Center))
+                    notice != null && !listOpen -> StreamNoticeCard(
+                        notice,
+                        compact = true,
+                        modifier = Modifier.align(Alignment.Center).padding(12.dp)
+                    )
+                }
+
+                // A lost or slow connection, at the top left of the picture while it lasts. Not with
+                // a retry or the reconnecting screen, which show its icon themselves, nor under the
+                // sideways controls, which take that corner for a moment.
+                val connection = state.playback.connectionNotice()
+                if (connection != null && !recovery && notice !is StreamNotice.Retrying && (portrait || !controlsShown)) {
+                    Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.TopStart) {
+                        ConnectionBadge(connection, compact = true)
+                    }
                 }
 
                 if (!portrait && !listOpen && !recovery) {
@@ -967,19 +982,19 @@ private fun NoChannels(state: UiState, onSettings: () -> Unit, modifier: Modifie
     }
 }
 
+/**
+ * A short message at the top, such as a favorite added. No moving dots: those mean "wait", and these
+ * messages are done when they show (the stream's notices are [StreamNoticeCard]).
+ */
 @Composable
 private fun StatusPill(message: String, modifier: Modifier = Modifier) {
-    Row(
+    Box(
         modifier
             .padding(12.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(Scrim)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 18.dp, vertical = 10.dp)
     ) {
-        // The reconnecting screen's dots: "wait" looks the same at every stage.
-        WaitingDots(7.dp)
-        Spacer(Modifier.width(12.dp))
         BasicText(message, style = TextStyle(color = FluxOnSurface, fontSize = 16.sp, textAlign = TextAlign.Center))
     }
 }

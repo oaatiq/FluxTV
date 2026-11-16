@@ -66,29 +66,44 @@ internal fun rememberTimeFormat(): java.text.DateFormat {
     return remember(context) { DateFormat.getTimeFormat(context) }
 }
 
-/** The large clock shown with the channel banner, top right: the time, and the day and date under it. */
+/**
+ * The top right corner of the TV screen: the large [clock] shown with the channel banner, and under
+ * it what is wrong with the [connection], for as long as it lasts (see [ConnectionNotice]).
+ */
 @Composable
-fun ClockOverlay() {
+fun TopRightOverlay(clock: Boolean, connection: ConnectionNotice?) {
+    Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.TopEnd) {
+        Column(horizontalAlignment = Alignment.End) {
+            if (clock) ClockCard()
+            if (connection != null) {
+                if (clock) Spacer(Modifier.height(12.dp))
+                ConnectionBadge(connection)
+            }
+        }
+    }
+}
+
+/** The large clock: the time, and the day and date under it. */
+@Composable
+private fun ClockCard() {
     val now = rememberMinuteClock()
     val timeFormat = rememberTimeFormat()
     val dateFormat = remember {
         val locale = Locale.getDefault()
         SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), locale)
     }
-    Box(Modifier.fillMaxSize().overscan(), contentAlignment = Alignment.TopEnd) {
-        Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(Scrim)
-                .padding(horizontal = 28.dp, vertical = 14.dp),
-            horizontalAlignment = Alignment.End
-        ) {
-            BasicText(
-                timeFormat.format(Date(now)),
-                style = TextStyle(color = FluxOnSurface, fontSize = 60.sp, fontWeight = FontWeight.Bold)
-            )
-            BasicText(dateFormat.format(Date(now)), style = TextStyle(color = FluxMuted, fontSize = 22.sp))
-        }
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Scrim)
+            .padding(horizontal = 28.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.End
+    ) {
+        BasicText(
+            timeFormat.format(Date(now)),
+            style = TextStyle(color = FluxOnSurface, fontSize = 60.sp, fontWeight = FontWeight.Bold)
+        )
+        BasicText(dateFormat.format(Date(now)), style = TextStyle(color = FluxMuted, fontSize = 22.sp))
     }
 }
 
@@ -197,27 +212,6 @@ private fun ProgrammeProgress(fraction: Float) {
             .background(Color(0x33FFFFFF))
     ) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FluxAccent))
-    }
-}
-
-/**
- * Small, centered, non-intrusive status while recovering (REQ-BUF-008, §20), with the same moving
- * dots as the reconnecting screen, so "wait" looks the same at every stage, for those who do not read.
- */
-@Composable
-fun StatusOverlay(message: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(Scrim)
-                .padding(horizontal = 28.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            WaitingDots(10.dp)
-            Spacer(Modifier.width(18.dp))
-            BasicText(message, style = TextStyle(color = FluxOnSurface, fontSize = 24.sp))
-        }
     }
 }
 

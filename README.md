@@ -205,8 +205,28 @@ couple of seconds a normal channel change takes, with the channel banner while i
 
 ## When a channel stops
 
-A short stall shows nothing; a longer one shows a small message with three moving dots while FluxTV
-retries. If the channel still does not come back (about 45 s), a calm full screen takes over, made
+Every problem that keeps a channel from playing normally is shown on screen for as long as it lasts,
+with a picture that can be understood without reading, and goes away by itself once the channel plays
+again. FluxTV fixes what it can by itself; nothing asks the Viewer to choose anything. The same three
+signs are used throughout: **three slowly moving dots** mean "wait, FluxTV is on it", an **icon**
+says why (the table further down), and a few plain words say it for those who read.
+
+| What happens | What the screen shows | What FluxTV does |
+|---|---|---|
+| A channel takes more than 1.5 s to start, or stops to load for more than 1.5 s | The moving dots, in the middle | Waits; starts it again after 15 s (start) or 8 s (stall) |
+| FluxTV is trying the channel again | Icon + dots + *Connection interrupted. Trying again…* (or *No network connection.*, *Channel temporarily unavailable.*) | Tries again, with growing pauses, about 45 s in all |
+| Those tries did not bring it back | The full *Reconnecting…* screen (below) | Tries again every 30 s, for as long as the channel is on screen |
+| The network is gone, while the channel still plays what it buffered | *No network connection*, crossed-out Wi-Fi, top right | Starts the channel again the moment the network is back |
+| The channel keeps stopping to load (3 times in 2 minutes) | *Slow connection*, faint Wi-Fi, top right | Lowers the picture quality by itself; the notice goes after 2 minutes without a stop |
+| The picture freezes while the sound plays on | The dots while the picture restarts; if it keeps freezing, *The picture has stopped.* with a paused TV | Restarts the picture at once 3 times, then every 30 s while it stays stopped |
+| The TV cannot show this channel's picture | *Sound only.* with a loudspeaker | Nothing can: the sound plays on |
+| Another app took the sound and paused the channel | *Paused.* with the pause sign, and **OK Play** | OK plays it again |
+
+A lost or slow connection also shows in the channel list, under its title, and a lost network on the
+start-up screen. Both follow what Android reports; a channel whose data keeps arriving although
+Android reports no network does not show it, as a TV can report that wrongly.
+
+If the channel still does not come back (about 45 s), a calm full screen takes over, made
 to be understood without reading: the channel's **logo and number**, the same **slowly moving
 dots**, and one word, *Reconnecting…*. There is nothing to choose: FluxTV keeps bringing the channel
 back by itself, and the picture simply returns. OK tries again at once; ▲ ▼ change channel as always.
@@ -221,6 +241,8 @@ For whoever looks after the TV, the reason is in small print at the bottom, with
 | Magnifier | The provider does not have the channel (moved, or removed from the playlist) |
 | TV | This TV's decoder failed, perhaps only for now |
 | "i" | Temporarily unavailable: the provider is not sending it |
+
+The same icons go with the message while FluxTV is still trying again, before this screen.
 
 A channel this TV cannot play at all (protected, or in a format it cannot decode) shows a
 **crossed-out TV** and "▲ ▼ Change channel" instead of the dots: nothing will bring it back.
@@ -482,6 +504,15 @@ quiet one and a negative gain on the loud one.
 restart FluxTV (or the TV). TV comes back on the second playlist's channels, on its last channel,
 with no playlist prompt or choice anywhere outside Settings.
 
+**Every streaming problem on screen.** While a channel plays, unplug the TV's network cable (or switch
+off the Wi-Fi router): within a few seconds *No network connection* shows at the top right while the
+picture plays on, then the dots and *No network connection.* in the middle once the buffer runs out,
+then the *Reconnecting…* screen. Plug it back in: the channel comes back by itself and every notice
+goes. Limit the TV's bandwidth below the channel's (a router's QoS setting): the dots show at each
+stop, and *Slow connection* after the third within two minutes. Tune a channel whose picture the TV
+cannot decode: *Sound only.* **Settings → Diagnostics → History** has a `[network]` line for each loss
+and return, and a `[buffering]` line when the slow connection is shown.
+
 **Settings with any remote.** With a remote that has no MENU key (or the TV's own remote through
 HDMI-CEC), press OK, ◀, ◀: the hint under the list reads *OK: open Settings* and ⚙ is highlighted; OK
 opens Settings (the PIN first, if one is set), and **Back to TV** returns to the channel. From ⚙, ▶
@@ -550,8 +581,9 @@ app/src/main/java/com/fluxtv/app/
 │                   diagnostics
 ├─ setup/           the phone page behind the QR code (a small web server, during setup only)
 ├─ ui/
-│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock);
-│  │                TouchEasyModeScreen is the phone and tablet layout
+│  ├─ easymode/     fullscreen player + overlays (channel list, number entry, recovery, banner, clock,
+│  │                StreamNotices for every streaming problem); TouchEasyModeScreen is the phone and
+│  │                tablet layout
 │  ├─ admin/        PIN gate + playlists (QR code, saved list) / channels / preferences / diagnostics
 │  ├─ components/   large-type, high-contrast, focusable TV widgets
 │  └─ AppViewModel  the Easy Mode state machine (STARTING → WATCHING ⇄ CHANNEL LIST)

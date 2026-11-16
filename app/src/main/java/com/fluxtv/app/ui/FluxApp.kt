@@ -33,7 +33,9 @@ fun FluxApp(vm: AppViewModel, touchUi: Boolean, onExit: () -> Unit, onFullscreen
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 val textScale = state.settings.textSizePercent / 100f
                 when (state.mode) {
-                    AppMode.STARTING -> ScaledText(textScale) { StartingScreen(state.startupMessage) }
+                    AppMode.STARTING -> ScaledText(textScale) {
+                        StartingScreen(state.startupMessage, networkLost = state.playback.networkLost)
+                    }
                     AppMode.EASY -> ScaledText(textScale) {
                         if (touchUi) TouchEasyModeScreen(state, vm, onFullscreen) else EasyModeScreen(state, vm, onExit)
                     }

@@ -2,8 +2,8 @@
 
 How each requirement in the *FluxTV: Basic Product & System Requirements Specification* (plus the
 added **Hardware resource utilization**, **Smartphone playlist setup**, **Multiple-playlist
-management**, **Programme guide, clock, text size and even volume** and **Phones and tablets**
-sections) is met in this implementation.
+management**, **Programme guide, clock, text size and even volume**, **Phones and tablets** and
+**Visual feedback for streaming problems** sections) is met in this implementation.
 
 ## 3. Operating principle / Easy Mode
 - **REQ-GEN-001/002** — `ui/AppViewModel.kt` (`AppMode.EASY`, `EasyOverlay`) exposes only watch,
@@ -44,11 +44,13 @@ sections) is met in this implementation.
 - **REQ-SEN-010/011/012** — large type (22–72sp) and high-contrast palette in `ui/theme/Theme.kt`
   and `ui/components/Components.kt`.
 - **REQ-SEN-013** — status uses words, never color alone (`strings.xml`, `ErrorMapper`, overlays);
-  the reconnecting screen pairs its pictures with one word, *Reconnecting…*.
+  the reconnecting screen pairs its pictures with one word, *Reconnecting…*, and every stream notice
+  its icon with a few words (`StreamNotices.kt`).
 - **REQ-SEN-014** — `ChannelRow` / `ChannelInfoBanner` prioritise number, logo, name.
 - **REQ-SEN-015** — strong focus highlight (accent fill + border) on every focusable component.
 - **REQ-SEN-016/017/018** — only a subtle startup pulse, and the slow dots of the reconnecting
-  screen (one dot brightens at a time, a 1.8 s cycle); no pointer needed (D-pad focus model).
+  screen and the stream notices (one dot brightens at a time, a 1.8 s cycle); no pointer needed
+  (D-pad focus model).
 
 ## 7. Remote-control behavior
 - **REQ-REM-001/002** — one central handler maps each key to one action, consistently
@@ -251,6 +253,42 @@ sections) is met in this implementation.
   meaning, so a keyboard types into the search (`MainActivity.TOUCH_KEYS`).
 - **Acceptance test** — README → Acceptance testing → *Phone*.
 
+## Visual feedback for streaming problems (added section)
+- **Every problem that impacts the stream is on screen while it lasts, and goes by itself once the
+  channel plays again** — `ui/easymode/StreamNotices.kt`: one `StreamNotice` in the middle of the
+  picture at a time (`rememberStreamNotice`), and a `ConnectionNotice` in a corner; the reconnecting
+  screen once quick retries are used up (REQ-REC-005). The same signs throughout, made for elderly
+  Viewers: the slowly moving dots for "wait, FluxTV is on it", an icon for why
+  (`ProblemIcon`, recognisable without reading) and a few plain words (REQ-SEN-013). No warning
+  colour, nothing to choose; FluxTV heals what is transient by itself (REQ-REC, REQ-BUF-005/006).
+- **Slow start or stall** — after 1.5 s without a picture (`BUSY_GRACE_MS`), the dots alone
+  (`StreamNotice.Busy`); shorter ones show nothing, so zapping and a good line stay clean. The
+  watchdog still restarts the channel after 15 s (start) or 8 s (stall).
+- **Retrying** — the message of §20 with the icon of its cause (`StreamNotice.Retrying`;
+  `PlaybackStatus.problem` is now set while retrying, not only on the prompt).
+- **No network** — `FluxPlayerController.watchNetwork`: Android reporting no network for 3 s shows
+  *No network connection* (crossed-out Wi-Fi) at the top right while the channel may still play from
+  its buffer, so the Viewer knows why before the picture stops, and in the channel list's header and
+  on the start-up screen; gone the moment Android reports the network back, when the channel is also
+  restarted. A stream load that started after the report and completed proves the network works,
+  and keeps the notice off (a TV can report no network wrongly). `[network]` history lines.
+- **Slow connection** — three stalls of 1 s or more within 2 minutes (`noteStall`) show *Slow
+  connection* (faint Wi-Fi) at the top right, until 2 minutes pass without one; adaptive streaming
+  lowers the quality by itself meanwhile (REQ-ADP). Counted per channel. A `[buffering]` history line.
+- **Picture frozen while the sound plays** — the dots while the decoder restarts (3 times at once
+  per tune, as before); a picture that freezes again after those shows *The picture has stopped.*
+  (a TV with the pause sign) and is restarted every 30 s while it stays stopped, instead of being
+  left frozen until the next channel change (`startFrozenPictureWatch`). Pictures coming again by
+  themselves take the notice away.
+- **Sound only** — a channel whose picture this TV cannot decode says *Sound only.* (loudspeaker)
+  instead of a silent black screen (`onTracksChanged`, `PlaybackProblem.SOUND_ONLY`).
+- **Paused by another app** — on a TV, *Paused.* (pause sign) with **OK Play**; OK plays the channel
+  again (`MainActivity`). The phone layout keeps its Play button.
+- **Phones and tablets** — the same notices, smaller (`StreamNoticeCard(compact = true)`), the
+  connection notice at the top left of the picture; the phone's short messages (a favorite added)
+  no longer show the waiting dots.
+- **Acceptance test** — README → Acceptance testing → *Every streaming problem on screen*.
+
 ## 11–13. Playback, buffering, adaptive streaming
 - **REQ-PLAY-001/002/004** — ExoPlayer live playback over common M3U/HLS/DASH/TS sources; a stream
   type with no player module (RTSP, Smooth Streaming) reads "Unable to play this channel" instead of
@@ -267,13 +305,15 @@ sections) is met in this implementation.
   extension; formats the TV decodes or passes through still go to the TV first.
 - **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
 - **REQ-PLAY-006 / REQ-BUF-004** — phases distinguish loading / transient / prolonged / failure in
-  `FluxPlayerController`.
+  `FluxPlayerController`, each with its own visual (see *Visual feedback for streaming problems*).
 - **REQ-BUF-001/002** — `DefaultLoadControl` 30–60s buffer, `prioritizeTimeOverSizeThresholds`; where
   apps get 192 MB of heap or less, the buffer is capped at a quarter of it instead.
-- **REQ-BUF-003** — short buffering shows no message; only a watchdog escalates: 8 s for a stall,
-  15 s for a channel still starting, armed by every prepare.
+- **REQ-BUF-003** — short buffering shows no message: under 1.5 s nothing at all, then only the
+  moving dots, without words; only a watchdog escalates: 8 s for a stall, 15 s for a channel still
+  starting, armed by every prepare.
 - **REQ-BUF-005/006/007** — automatic recovery, no Retry needed, bounded by `RecoveryPolicy`.
-- **REQ-BUF-008** — prolonged buffering → "Connection interrupted. Trying again…".
+- **REQ-BUF-008** — prolonged buffering → "Connection interrupted. Trying again…", with the faint
+  Wi-Fi icon.
 - **REQ-ADP-001..006** — `DefaultTrackSelector` adaptive selection; continuity over quality;
   automatic, no Viewer action.
 - **REQ-ADP-007** — optional admin max-quality cap (`setMaxVideoHeight`).
@@ -287,7 +327,8 @@ sections) is met in this implementation.
 
 ## 15–17. Network, reliability, recovery
 - **REQ-NET-001..006** — `NetworkMonitor` classifies connectivity; auto-reconnect without restart;
-  per-channel failures isolated. Recovery only plays while FluxTV is on screen.
+  per-channel failures isolated. Recovery only plays while FluxTV is on screen. A lost network is
+  said on screen while it lasts, before the buffer runs out (`watchNetwork`).
 - **REQ-REL-001..008** — exceptions swallowed in data/cache layers; single reused ExoPlayer; config
   in DataStore/JSON survives crashes & updates; an unreadable settings file is replaced with defaults
   instead of crashing every start.
@@ -309,7 +350,8 @@ sections) is met in this implementation.
   again too. A channel that cannot
   play at all (DRM-protected, or nothing this TV can decode) says so at once and is not retried. A
   picture that stops while the sound plays on (no new frame for 6 s after frames had been coming)
-  gets a fresh decoder, at most 3 times per tune (`startFrozenPictureWatch`).
+  gets a fresh decoder, 3 times at once per tune; after those, *The picture has stopped.* is shown
+  and the decoder restarted every 30 s while it stays stopped (`startFrozenPictureWatch`).
 
 ## 18. Performance
 - **REQ-PERF-001/002** — immediate key feedback; overlays are plain Compose state toggles.

@@ -22,15 +22,19 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.ui.easymode.ConnectionBadge
+import com.fluxtv.app.ui.easymode.ConnectionNotice
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxOnSurface
 
 /**
  * Minimal, unobtrusive startup feedback (REQ-START-005/006). No technical detail; just a calm
- * wordmark and a gently pulsing status line while the first channel is prepared.
+ * wordmark and a gently pulsing status line while the first channel is prepared. [networkLost]:
+ * Android reports no network, said under it, as the reason a first start without saved channels
+ * waits (the start-up goes on by itself once the network is back).
  */
 @Composable
-fun StartingScreen(message: String) {
+fun StartingScreen(message: String, networkLost: Boolean = false) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val alpha by transition.animateFloat(
         initialValue = 0.4f,
@@ -50,6 +54,10 @@ fun StartingScreen(message: String) {
                 modifier = Modifier.alpha(alpha),
                 style = TextStyle(color = FluxOnSurface, fontSize = 24.sp)
             )
+            if (networkLost) {
+                Spacer(Modifier.height(32.dp))
+                ConnectionBadge(ConnectionNotice.NO_NETWORK)
+            }
         }
     }
 }

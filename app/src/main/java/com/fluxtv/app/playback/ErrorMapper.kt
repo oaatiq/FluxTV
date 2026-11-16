@@ -11,7 +11,10 @@ enum class ErrorKind { NETWORK, SOURCE, DECODER, DRM, NO_NETWORK, UNKNOWN }
  * the Viewer's words, so the screen tells a TV that has no network from a provider that refuses the
  * channel or a TV that cannot decode it; until these, every case read "This channel is temporarily
  * unavailable." [healing]: FluxTV goes on trying to bring the channel back in the background; false
- * only for a channel this TV cannot play at all, which no retry helps.
+ * for what no retry helps: a channel this TV cannot play at all, or only the sound of.
+ *
+ * The last three are about a channel that does play, but not fully: they are said in the middle of
+ * the picture while they last, never on the recovery screen.
  */
 enum class PlaybackProblem(val title: String, val hint: String, val healing: Boolean = true) {
     NO_NETWORK(
@@ -42,6 +45,20 @@ enum class PlaybackProblem(val title: String, val hint: String, val healing: Boo
     DECODER(
         "This TV could not play this channel.",
         "Its decoder may only be busy for now. FluxTV keeps trying."
+    ),
+    FROZEN(
+        "The picture has stopped.",
+        "The sound plays on. FluxTV restarts the picture by itself."
+    ),
+    SOUND_ONLY(
+        "Sound only.",
+        "This TV can't show the picture of this channel.",
+        healing = false
+    ),
+    PAUSED(
+        "Paused.",
+        "Another app took the sound.",
+        healing = false
     )
 }
 

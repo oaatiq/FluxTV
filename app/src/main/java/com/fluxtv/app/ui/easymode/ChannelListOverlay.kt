@@ -120,6 +120,9 @@ private const val PREVIEW_DELAY_MS = 140L
  *
  * [guide]: when given, each channel that has it shows what is on now after its name (EPG-06); null
  * when Preferences turns that off. Only the rows on screen look it up, once a minute.
+ *
+ * [connection]: a lost or slow connection, said under the title while it lasts: it is why channels
+ * picked now may not start, and the panel covers the corner of the screen where it is said otherwise.
  */
 @Composable
 fun ChannelListOverlay(
@@ -133,7 +136,8 @@ fun ChannelListOverlay(
     onSelect: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
     onOpenSettings: () -> Unit,
-    guide: Guide? = null
+    guide: Guide? = null,
+    connection: ConnectionNotice? = null
 ) {
     // byGroup: the real categories in first-appearance order, grouped by the view model when the
     // playlist changes rather than here, on the main thread, every time the list opens.
@@ -262,6 +266,10 @@ fun ChannelListOverlay(
                 }
                 Spacer(Modifier.width(16.dp))
                 ClockText()
+            }
+            if (connection != null) {
+                Spacer(Modifier.height(12.dp))
+                ConnectionBadge(connection, background = FluxSurfaceVariant)
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.weight(1f).fillMaxWidth()) {
