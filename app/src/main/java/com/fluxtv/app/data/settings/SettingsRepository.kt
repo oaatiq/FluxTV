@@ -15,9 +15,10 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.fluxtv.app.data.remote.DEFAULT_USER_AGENT
 import com.fluxtv.app.data.remote.headerValue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -180,9 +181,22 @@ data class FluxSettings(
 
 class SettingsRepository(private val context: Context) {
 
-    // A file that cannot be read at all reads as the defaults, rather than throwing in every caller.
-    val settings: Flow<FluxSettings> = context.dataStore.data.catch { e ->
-        if (e is IOException) emit(emptyPreferences()) else throw e
+    /**
+     * A file that cannot be read is read again, a few times quickly, before anything is said: it used
+     * to read as the defaults at once, so that a read that failed for a moment showed a TV that has
+     * a playlist as one to set up from the start, and ended the flow, so that nothing changed in
+     * Settings reached the screen again. Still unreadable, it reads as the defaults rather than have
+     * every caller wait or throw, and goes on being tried: the real settings take over once it reads.
+     */
+    val settings: Flow<FluxSettings> = context.dataStore.data.retryWhen { e, attempt ->
+        if (e !is IOException) return@retryWhen false
+        if (attempt < QUICK_READ_RETRIES) {
+            delay(QUICK_READ_RETRY_MS shl attempt.toInt())
+        } else {
+            if (attempt == QUICK_READ_RETRIES) emit(emptyPreferences())
+            delay(SLOW_READ_RETRY_MS)
+        }
+        true
     }.map { p ->
         FluxSettings(
             playlists = p.playlists(),
@@ -289,5 +303,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setProgrammeInList(value: Boolean) {
         context.dataStore.edit { it[Keys.PROGRAMME_IN_LIST] = value }
+    }
+
+    private companion object {
+        /** Quick reads again after a failed one, 0.2 s apart and doubling: 3 s in all. */
+        const val QUICK_READ_RETRIES = 4L
+        const val QUICK_READ_RETRY_MS = 200L
+
+        /** How often a file still unreadable after those is tried again. */
+        const val SLOW_READ_RETRY_MS = 30_000L
     }
 }
