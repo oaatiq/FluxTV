@@ -79,17 +79,32 @@ class ChannelRepository(
     private val refreshLock = Mutex()
 
     /**
+     * Held while channels are put in place, by a load and by [loadFromCache], so that one never
+     * replaces newer channels the other has just put there. Only for that moment, unlike
+     * [refreshLock]: the saved channels must not wait for a download that can take minutes.
+     */
+    private val publishLock = Any()
+
+    /**
      * Starts from the saved channels if they are [activeId]'s. A switch to another playlist that the
      * power cut short can leave the other one's channels in the cache, and those are not shown.
+     *
+     * Channels already loaded are newer than the saved ones, or the same: they stay. The start-up
+     * and the periodic job, which can start the process, both read the cache, and a refresh of the
+     * job's that finished while the start-up was reading the file was replaced with what it had read.
      */
     fun loadFromCache(activeId: String?) {
-        if (activeId == null) return
+        if (activeId == null || _channels.value.isNotEmpty()) return
         val cached = cache.load() ?: return
         if (cached.playlistId != null && cached.playlistId != activeId) return
-        playlistId = activeId
-        _channels.value = sharingRepeats(cached.channels)
-        _lastUpdatedMs.value = cached.updatedAtMs
-        _guideUrls.value = cached.guideUrls
+        val channels = sharingRepeats(cached.channels)
+        synchronized(publishLock) {
+            if (_channels.value.isNotEmpty()) return
+            playlistId = activeId
+            _channels.value = channels
+            _lastUpdatedMs.value = cached.updatedAtMs
+            _guideUrls.value = cached.guideUrls
+        }
     }
 
     /**
@@ -161,11 +176,13 @@ class ChannelRepository(
             val old = if (keepNumbers) _channels.value else emptyList()
             val fetched = fetch(playlist.url, playlist.type, old, userAgent, renumberIfMostlyNew)
             val merged = fetched.channels ?: return@withContext fetched.failure!!
-            playlistId = playlist.id
-            _channels.value = merged
-            _guideUrls.value = fetched.guideUrls
             val now = System.currentTimeMillis()
-            _lastUpdatedMs.value = now
+            synchronized(publishLock) {
+                playlistId = playlist.id
+                _channels.value = merged
+                _guideUrls.value = fetched.guideUrls
+                _lastUpdatedMs.value = now
+            }
             cache.save(CachedPlaylist(merged, now, playlist.name, playlist.id, fetched.guideUrls))
             RefreshOutcome.Success(merged.size)
         }
