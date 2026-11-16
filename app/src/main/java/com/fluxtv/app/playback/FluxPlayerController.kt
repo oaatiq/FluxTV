@@ -173,8 +173,9 @@ class FluxPlayerController(
 
     /**
      * Android paused the channel on its own: another app took the sound for good, or, on a phone,
-     * the headphones were unplugged. Nothing resumes it by itself, so the phone layout offers Play.
-     * Cleared as soon as it plays again, including by [onResume] and a new channel.
+     * the headphones were unplugged. Nothing resumes it by itself, so the phone layout offers Play:
+     * retries and healing rounds reconnect the channel paused (see [load]). Cleared as soon as it
+     * plays again, including by [onResume], a new channel and Try again.
      */
     private val _pausedBySystem = MutableStateFlow(false)
     val pausedBySystem: StateFlow<Boolean> = _pausedBySystem.asStateFlow()
@@ -228,6 +229,8 @@ class FluxPlayerController(
         recentStalls.clear()
         slowConnectionJob?.cancel()
         _status.value = _status.value.copy(slowConnection = false, pictureProblem = null)
+        // Choosing a channel is the Viewer asking for it to play, whatever Android paused before.
+        _pausedBySystem.value = false
         bufferingEvents = 0
         droppedFramesTotal = 0
         stabilityJob?.cancel()
@@ -275,6 +278,7 @@ class FluxPlayerController(
         decoderRetried = false
         hlsTried = loadAsHls
         plainTried = !loadAsHls
+        _pausedBySystem.value = false
         updateStatus(PlaybackPhase.PREPARING, message = null, prompt = false)
         reprepareCurrent("manual retry")
     }
@@ -454,8 +458,10 @@ class FluxPlayerController(
             else MediaItem.fromUri(request.address)
         )
         p.prepare()
-        // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back.
-        p.playWhenReady = onScreen
+        // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back. One
+        // while Android has the channel paused (headphones unplugged, another app's sound) stays
+        // paused: it used to start the sound again, out of the phone's speaker or over that app.
+        p.playWhenReady = onScreen && !_pausedBySystem.value
         true
     } catch (e: RuntimeException) {
         // setMediaItem threw before replacing anything: cannotPlay() stops the previous channel rather
