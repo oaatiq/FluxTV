@@ -616,8 +616,9 @@ Every FluxTV looks at the newest release of this repository, so publishing one i
    The workflow signs with that key and the key lineage in `signing/fluxtv.lineage`
    (`tools/sign_release.sh`): APK Signature Scheme v3 key rotation, which lets a release update a
    FluxTV signed with any earlier key in the chain, the debug keys the TVs were first set up with,
-   and keep its settings. It works from Android 9; below that only a FluxTV already on the release
-   key can update. Android installs an update only when its key is the same or one the lineage
+   and keep its settings. It works from Android 9. Only the v3 signature is written (v1 and v2 cannot
+   carry the lineage), so Android 7 and 8 cannot install a release, and its `update.json` says
+   Android 9 (`minSdk` 28) so FluxTV there does not try. Android installs an update only when its key is the same or one the lineage
    proves it took over from, so the workflow stops without the keystore, and checks that the APK
    carries the v3 signature. Optionally, the repository variable `FLUXTV_CERT_SHA256` (the
    certificate digest `apksigner verify --print-certs` prints) makes it check the exact certificate

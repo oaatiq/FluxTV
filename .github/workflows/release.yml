@@ -116,6 +116,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "dist/FluxTV-$name.apk"
           python3 tools/make_update_manifest.py "dist/FluxTV-$name.apk" \
             --metadata app/build/outputs/apk/release/output-metadata.json \
+            --min-sdk 28 \
             --url "https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/FluxTV-$name.apk" \
             --out dist/update.json
 

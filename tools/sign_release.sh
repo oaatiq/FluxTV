@@ -12,8 +12,12 @@
 # the chain, and keeps its data. The lineage holds certificates only, no private keys.
 #
 # --rotation-min-sdk-version 28 is what applies the rotation from Android 9: apksigner otherwise
-# applies it from Android 13 only, and older TVs would refuse the update. Below Android 9 only the
-# release key counts, so a FluxTV installed there with an older key cannot update to this build.
+# applies it from Android 13 only, and older TVs would refuse the update.
+#
+# Only the v3 signature is written. The older v1 and v2 schemes cannot carry a lineage, so apksigner
+# would sign them with the oldest key in it, a debug key that has no business in a release. Android
+# 7 and 8 read only those schemes, so they cannot install a release: the Release workflow says so in
+# update.json (minSdk 28), and a FluxTV there is not offered one.
 #
 # The APK is signed in place. Gradle may have signed it already; apksigner replaces that signature.
 # FLUXTV_KEY_ALIAS defaults to fluxtv-release, FLUXTV_KEY_PASSWORD to the keystore password.
@@ -41,6 +45,8 @@ fi
   --key-pass env:FLUXTV_KEY_PASSWORD \
   --lineage "$lineage" \
   --rotation-min-sdk-version 28 \
+  --v1-signing-enabled false \
+  --v2-signing-enabled false \
   "$apk"
 
 "$APKSIGNER" verify --verbose --print-certs "$apk" | grep -E "Verified using|certificate SHA-256" || true
