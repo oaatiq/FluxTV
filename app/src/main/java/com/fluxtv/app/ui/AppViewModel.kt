@@ -34,7 +34,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -190,6 +194,24 @@ class AppViewModel(
     private var videoSurfaceReady = false
     private var retuneWhenOnScreen = false
 
+    /** Set while a channel chosen without a video surface waits for one (see [tuneTo]). */
+    private var tuneAwaitsSurface = false
+    private var surfaceWatchJob: Job? = null
+
+    /**
+     * Bumped to have Easy Mode throw its video view away and build a new one, which comes with a
+     * new surface: see [watchForSurface].
+     */
+    private val _surfaceGeneration = MutableStateFlow(0)
+    val surfaceGeneration: StateFlow<Int> = _surfaceGeneration.asStateFlow()
+
+    /** Asks the activity to recreate itself, the last resort when no video surface comes back. */
+    private val _recreateWanted = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val recreateWanted: SharedFlow<Unit> = _recreateWanted.asSharedFlow()
+
     /** Set while a playlist is being added, so a phone cannot send a second one meanwhile. */
     private val adding = AtomicBoolean(false)
     private var phoneServer: PhoneSetupServer? = null
@@ -226,6 +248,18 @@ class AppViewModel(
         }
         viewModelScope.launch {
             container.playerController.playlistReloadWanted.collect { reloadPlaylistForRecovery() }
+        }
+        viewModelScope.launch {
+            container.playerController.noPictureOnScreen.collect {
+                // The view's surface is gone or was never given back: a new view, and the channel is
+                // tuned again once its surface is in place.
+                if (!resumed || _state.value.mode != AppMode.EASY || _state.value.currentChannel == null) return@collect
+                retuneWhenOnScreen = true
+                videoSurfaceReady = false
+                container.playerController.onPause()
+                _surfaceGeneration.update { it + 1 }
+                watchForSurface()
+            }
         }
         viewModelScope.launch {
             container.updateManager.status.map { it.updatingOnScreen }.distinctUntilChanged().collect { covering ->
@@ -491,6 +525,18 @@ class AppViewModel(
                 numberEntry = "",
                 transientMessage = null
             )
+        }
+        if (!videoSurfaceReady) {
+            // Nowhere to show the picture yet: playing now would run the decoder with sound under a
+            // black screen. The channel is tuned once the surface is in place ([retuneIfReturning]),
+            // and a surface that does not come is rebuilt ([watchForSurface]). The dots show meanwhile.
+            retuneWhenOnScreen = true
+            tuneAwaitsSurface = true
+            container.playerController.showWaitingForPicture(channel)
+            if (resumed && _state.value.mode == AppMode.EASY) watchForSurface()
+            saveLastChannel(LAST_CHANNEL_SAVE_DELAY_MS)
+            showBanner(channel)
+            return
         }
         container.playerController.playChannel(channel)
         saveLastChannel(LAST_CHANNEL_SAVE_DELAY_MS)
@@ -1050,11 +1096,13 @@ class AppViewModel(
     fun onActivityResume() {
         resumed = true
         if (retuneIfReturning()) return
+        if (retuneWhenOnScreen && !videoSurfaceReady && _state.value.mode == AppMode.EASY) watchForSurface()
         if (_state.value.mode == AppMode.EASY) container.playerController.onResume()
     }
 
     fun onActivityPause() {
         resumed = false
+        surfaceWatchJob?.cancel()
         container.playerController.onPause()
     }
 
@@ -1066,6 +1114,7 @@ class AppViewModel(
      */
     fun onActivityStop() {
         resumed = false
+        surfaceWatchJob?.cancel()
         // A setup session lasts only while its screen is on the TV.
         endPhoneSetup()
         if (_state.value.currentChannel != null) retuneWhenOnScreen = true
@@ -1078,7 +1127,36 @@ class AppViewModel(
     /** The video surface has been (re)created, so the player has somewhere to put the picture. */
     fun onVideoSurfaceReady() {
         videoSurfaceReady = true
+        surfaceWatchJob?.cancel()
         retuneIfReturning()
+    }
+
+    /**
+     * FluxTV is on screen with a channel to tune, waiting for its video surface. Android normally
+     * hands one over within a moment of a wake; on Android 9, FluxTV opened and closed again while
+     * the TV slept could be left with none at all, the picture frozen or black for good. When none
+     * comes, the video view is thrown away and built again, which brings a new surface and with it
+     * the usual re-tune; should that not help either, the activity is recreated.
+     */
+    private fun watchForSurface() {
+        if (surfaceWatchJob?.isActive == true) return
+        surfaceWatchJob = viewModelScope.launch {
+            delay(SURFACE_WAIT_MS)
+            if (!stillWaitingForSurface()) return@launch
+            logStandby("No video surface came back: rebuilding the video view")
+            _surfaceGeneration.update { it + 1 }
+            delay(SURFACE_WAIT_MS)
+            if (!stillWaitingForSurface()) return@launch
+            logStandby("Still no video surface: reopening the FluxTV screen")
+            _recreateWanted.tryEmit(Unit)
+        }
+    }
+
+    private fun stillWaitingForSurface(): Boolean =
+        resumed && !videoSurfaceReady && retuneWhenOnScreen && _state.value.mode == AppMode.EASY
+
+    private fun logStandby(message: String) {
+        container.diagnosticsStore.append(DiagnosticsEvent(System.currentTimeMillis(), null, "standby", message))
     }
 
     /** The video surface has gone: standby, or Easy Mode making way for the Settings screen. */
@@ -1100,7 +1178,9 @@ class AppViewModel(
         if (_state.value.mode != AppMode.EASY) return false
         val channel = channelToResume() ?: return false
         retuneWhenOnScreen = false
-        container.playerController.logReturnToScreen()
+        // A channel that only waited for its first surface is not coming back from anywhere.
+        if (!tuneAwaitsSurface) container.playerController.logReturnToScreen()
+        tuneAwaitsSurface = false
         tuneTo(channel)
         return true
     }
@@ -1135,6 +1215,7 @@ class AppViewModel(
         guideJob?.cancel()
         numberJob?.cancel()
         transientJob?.cancel()
+        surfaceWatchJob?.cancel()
         container.networkMonitor.stop()
         container.playerController.release()
     }
@@ -1169,6 +1250,9 @@ class AppViewModel(
 
         /** How long a channel has to stay on before it is remembered for the next start. */
         private const val LAST_CHANNEL_SAVE_DELAY_MS = 3_000L
+
+        /** How long FluxTV on screen waits for its video surface before rebuilding the view. */
+        private const val SURFACE_WAIT_MS = 3_000L
 
         /** How long the phone page answers after the QR code is shown. */
         private const val PHONE_SETUP_MS = 15 * 60_000L

@@ -4,7 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.display.DisplayManager
+import android.os.PowerManager
 import android.os.SystemClock
+import android.view.Display
 import androidx.core.content.ContextCompat
 import com.fluxtv.app.data.model.DiagnosticsEvent
 import kotlinx.coroutines.CoroutineScope
@@ -58,17 +61,43 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
     fun register() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_OFF)
         }
         ContextCompat.registerReceiver(appContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // USER_PRESENT comes from SystemUI, not the system: below Android 13 a not-exported receiver
+        // is guarded by a permission only FluxTV holds, so SystemUI's broadcast was refused and never
+        // arrived. It is a protected broadcast no app can send, so it is safe to take from outside.
+        ContextCompat.registerReceiver(
+            appContext, receiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_EXPORTED
+        )
+    }
+
+    /**
+     * Whether the TV is really awake now. Android queues the screen broadcasts and sends them in
+     * order, so on a slow box a SCREEN_ON can arrive after the TV has already gone back to sleep (the
+     * TV switched on and straight off again, two presses of power). Acted on, it opened FluxTV on a
+     * sleeping TV, which Android undid at once, and Android 9 then never gave the video view a
+     * surface again on the next real wake: the picture stayed frozen or black until FluxTV was
+     * reopened by hand.
+     */
+    private fun isAwake(): Boolean {
+        val power = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (power?.isInteractive == false) return false
+        val display = (appContext.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)
+            ?.getDisplay(Display.DEFAULT_DISPLAY)
+        return display == null || display.state == Display.STATE_ON || display.state == Display.STATE_UNKNOWN
     }
 
     private fun onWake(action: String) {
+        val signal = action.substringAfterLast('.')
+        // Checked before the gap below, so a late signal does not hold back the real wake after it.
+        if (!isAwake()) {
+            record("$signal: the TV is not awake, ignored")
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         if (now - lastWakeMs < WAKE_MIN_GAP_MS) return
         lastWakeMs = now
-        val signal = action.substringAfterLast('.')
 
         if (isFluxTvOnScreen()) {
             record("$signal: FluxTV is already on screen")
@@ -83,6 +112,15 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
             }
             if (settings?.startOnBoot == false) {
                 record("$signal: start when the TV turns on is off")
+                return@launch
+            }
+            // Reading the settings can take a moment, in which the TV may have gone back to sleep.
+            if (!isAwake()) {
+                record("$signal: the TV went back to sleep, FluxTV left as it was")
+                return@launch
+            }
+            if (isFluxTvOnScreen()) {
+                record("$signal: FluxTV is already on screen")
                 return@launch
             }
             launchFluxTv(appContext, fromBoot = false)

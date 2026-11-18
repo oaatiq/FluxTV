@@ -87,6 +87,12 @@ class MainActivity : ComponentActivity() {
             FluxApp(viewModel, touchUi, onExit = ::finishAndRemoveTask, onFullscreen = ::setFullscreen)
         }
 
+        // The last resort when Android gives the video view no surface back after a wake, even
+        // once the view has been rebuilt: a new activity, whose window comes with a new one.
+        lifecycleScope.launch {
+            viewModel.recreateWanted.collect { recreate() }
+        }
+
         // A phone's screen modes are its own business (and a faster one only costs battery), so the
         // frame rate is matched on a TV only.
         if (touchUi) return

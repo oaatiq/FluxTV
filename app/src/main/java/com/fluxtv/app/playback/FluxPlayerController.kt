@@ -172,6 +172,19 @@ class FluxPlayerController(
     val playlistReloadWanted: SharedFlow<Unit> = _playlistReloadWanted.asSharedFlow()
 
     /**
+     * Emits when the channel plays its sound but not one frame of its picture has reached the
+     * screen: the video view has no surface (Android never gave it one back after a standby), so a
+     * new decoder alone cannot help. The app rebuilds the video view, and the channel is tuned again
+     * on its new surface. At most once per tune, so a view that cannot be fixed this way never loops.
+     */
+    private val _noPictureOnScreen = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val noPictureOnScreen: SharedFlow<Unit> = _noPictureOnScreen.asSharedFlow()
+    private var noPictureReported = false
+
+    /**
      * Android paused the channel on its own: another app took the sound for good, or, on a phone,
      * the headphones were unplugged. Nothing resumes it by itself, so the phone layout offers Play:
      * retries and healing rounds reconnect the channel paused (see [load]). Cleared as soon as it
@@ -221,6 +234,7 @@ class FluxPlayerController(
         hlsTried = loadAsHls
         plainTried = !loadAsHls
         frozenRestarts = 0
+        noPictureReported = false
         frozenPictureWatch?.cancel()
         healRound = 0
         lastHealFailure = null
@@ -342,6 +356,27 @@ class FluxPlayerController(
         // the activity (Exit closes the activity, the process may be reused), and recovery retries,
         // logging and the network-restore collector all run in it. The next playChannel() builds a
         // fresh player.
+    }
+
+    /**
+     * [channel] has been chosen but waits for the video surface before it is played (see
+     * AppViewModel.tuneTo): the screen shows the moving dots meanwhile, as for any start. Nothing
+     * is played, and nothing that would retry the channel before keeps running and says otherwise.
+     */
+    fun showWaitingForPicture(channel: Channel) {
+        retryJob?.cancel()
+        bufferingWatchdog?.cancel()
+        slowRetryJob?.cancel()
+        frozenPictureWatch?.cancel()
+        _pausedBySystem.value = false
+        _status.value = _status.value.copy(
+            phase = PlaybackPhase.PREPARING,
+            channel = channel,
+            userMessage = null,
+            showRecoveryPrompt = false,
+            problem = null,
+            pictureProblem = null
+        )
     }
 
     /** Recorded by the UI when FluxTV is back on screen and re-tunes to rebuild the decoder. */
@@ -761,6 +796,19 @@ class FluxPlayerController(
                 }
                 val frozenFor = now - lastFrameAtMs
                 val playedOn = p.currentPosition - positionAtLastFrame
+                // Sound for a good while and never a single frame: the picture has nowhere to go.
+                if (frames == 0 && framesSeen == 0 && !noPictureReported &&
+                    frozenFor >= NO_PICTURE_MS && playedOn >= NO_PICTURE_MS * 2 / 3
+                ) {
+                    noPictureReported = true
+                    logEvent(
+                        "decoder",
+                        "${currentChannel?.name} plays its sound, but no picture has reached the screen: " +
+                            "rebuilding the video view"
+                    )
+                    _noPictureOnScreen.tryEmit(Unit)
+                    return@launch
+                }
                 if (frozenFor < FROZEN_PICTURE_MS || playedOn < FROZEN_PICTURE_MS * 2 / 3 ||
                     framesSeen < MIN_FRAMES_BEFORE_FREEZE
                 ) continue
@@ -1115,6 +1163,9 @@ class FluxPlayerController(
 
         /** Frames that must have come in steadily before a stop counts as a freeze (2 s at 25 fps). */
         const val MIN_FRAMES_BEFORE_FREEZE = 50
+
+        /** How long sound may play without a single frame on screen before the view is rebuilt. */
+        const val NO_PICTURE_MS = 10_000L
 
         /**
          * Restarts for a frozen picture straight away, per tune; after them, one at most every

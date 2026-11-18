@@ -56,6 +56,7 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
     val player by vm.controller.activePlayer.collectAsStateWithLifecycle()
     val pausedBySystem by vm.controller.pausedBySystem.collectAsStateWithLifecycle()
+    val surfaceGeneration by vm.surfaceGeneration.collectAsStateWithLifecycle()
     val guide by vm.guide.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -63,6 +64,7 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
             player = player,
             onSurfaceReady = vm::onVideoSurfaceReady,
             onSurfaceLost = vm::onVideoSurfaceLost,
+            generation = surfaceGeneration,
             modifier = Modifier.fillMaxSize()
         )
 
