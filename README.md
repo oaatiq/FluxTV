@@ -62,6 +62,14 @@ To sign with a keystore of its own instead, set `FLUXTV_KEYSTORE` (and `FLUXTV_K
 `FLUXTV_KEY_ALIAS`, `FLUXTV_KEY_PASSWORD`, or the matching `-Pfluxtv.…` properties); it must hold the
 key the TVs' FluxTV is signed with, or they cannot update to it (see [Updates](#updates)).
 
+**A build for TVs that already updated from a release** must be signed the way releases are: a TV
+that installed one carries the release key, and Android then refuses builds signed with a debug key.
+Sign the release APK with the release key and its key lineage:
+
+```bash
+FLUXTV_KEYSTORE=/path/to/fluxtv-release.p12 FLUXTV_KEYSTORE_PASSWORD=… tools/sign_release.sh app/build/outputs/apk/release/app-release.apk
+```
+
 **Version numbers.** The build number (`versionCode`) is the number of commits up to the one built,
 so every later commit builds a higher one; that is how a TV knows a build is newer than its own. The
 version name is `fluxtv.versionName` in `gradle.properties` followed by it (`1.1.64`), or what
@@ -602,16 +610,19 @@ itself.
 
 Every FluxTV looks at the newest release of this repository, so publishing one is all it takes:
 
-1. **Once:** add the repository secret `FLUXTV_KEYSTORE_BASE64` (Settings → Secrets and variables →
-   Actions): the keystore whose key signed the FluxTV on the TVs, base64-encoded. For TVs set up so
-   far that is the debug keystore of the machine that built their FluxTV (`base64 -w0
-   ~/.android/debug.keystore`); its password and alias are Android's defaults, which the workflow
-   uses unless the secrets `FLUXTV_KEYSTORE_PASSWORD`, `FLUXTV_KEY_ALIAS` and `FLUXTV_KEY_PASSWORD` say
-   otherwise. Android installs an update only when it is signed with the same key, so the workflow
-   stops rather than publish a build no TV could install. Optionally, the repository variable
-   `FLUXTV_CERT_SHA256` (the certificate digest `apksigner verify --print-certs` prints) makes it check
-   the exact certificate too. Keep that keystore safe and backed up: losing it means TVs can no
-   longer be updated without reinstalling FluxTV, and whoever has it can sign builds the TVs accept.
+1. **Once:** add the repository secrets `FLUXTV_KEYSTORE_BASE64` (the release keystore,
+   base64-encoded) and `FLUXTV_KEYSTORE_PASSWORD` (Settings → Secrets and variables → Actions). The
+   key alias defaults to `fluxtv-release`; `FLUXTV_KEY_ALIAS` and `FLUXTV_KEY_PASSWORD` override it.
+   The workflow signs with that key and the key lineage in `signing/fluxtv.lineage`
+   (`tools/sign_release.sh`): APK Signature Scheme v3 key rotation, which lets a release update a
+   FluxTV signed with any earlier key in the chain, the debug keys the TVs were first set up with,
+   and keep its settings. It works from Android 9; below that only a FluxTV already on the release
+   key can update. Android installs an update only when its key is the same or one the lineage
+   proves it took over from, so the workflow stops without the keystore, and checks that the APK
+   carries the v3 signature. Optionally, the repository variable `FLUXTV_CERT_SHA256` (the
+   certificate digest `apksigner verify --print-certs` prints) makes it check the exact certificate
+   too. Keep that keystore and its password safe and backed up: losing either means TVs can no
+   longer be updated without reinstalling FluxTV, and whoever has them can sign builds the TVs accept.
 2. **Each release:** tag a commit and push the tag:
 
    ```bash

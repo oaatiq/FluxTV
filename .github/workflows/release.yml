@@ -5,13 +5,12 @@
 #   git tag v1.2.0 && git push origin v1.2.0
 # or from the Actions tab (Run workflow, with the version).
 #
-# Needs one repository secret, FLUXTV_KEYSTORE_BASE64: the keystore whose key signed the FluxTV
-# already on the TVs, base64-encoded. Android installs an update only when it carries the same key,
-# so a build signed with any other key could never update a TV, and this workflow stops without one.
-# For TVs set up so far that is the debug keystore of the machine that built their FluxTV:
-#   base64 -w0 ~/.android/debug.keystore     (macOS: base64 -i ~/.android/debug.keystore)
-# Its password and alias are Android's defaults; for another keystore, also set the secrets
-# FLUXTV_KEYSTORE_PASSWORD, FLUXTV_KEY_ALIAS and FLUXTV_KEY_PASSWORD.
+# Needs the repository secrets FLUXTV_KEYSTORE_BASE64 (the release keystore, base64-encoded) and
+# FLUXTV_KEYSTORE_PASSWORD; FLUXTV_KEY_ALIAS defaults to fluxtv-release and FLUXTV_KEY_PASSWORD to the
+# keystore password. The APK is signed with that key and the key lineage in signing/fluxtv.lineage
+# (tools/sign_release.sh), which lets it update a FluxTV signed with any of the earlier keys: the
+# debug keys TVs were first set up with. Android installs an update only when its key is the same or
+# one the lineage proves it took over from, so this workflow stops without the keystore.
 # Optionally, the repository variable FLUXTV_CERT_SHA256 (the certificate's SHA-256, as apksigner
 # prints it) makes the workflow check that the APK is signed with exactly that certificate.
 
@@ -65,17 +64,29 @@ jobs:
             exit 1
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/fluxtv.keystore"
-          echo "FLUXTV_KEYSTORE=$RUNNER_TEMP/fluxtv.keystore" >> "$GITHUB_ENV"
+          # Read by the signing step only: Gradle signs with its own debug key, which that step replaces.
+          echo "RELEASE_KEYSTORE=$RUNNER_TEMP/fluxtv.keystore" >> "$GITHUB_ENV"
 
       - name: Test and build
-        env:
-          FLUXTV_KEYSTORE_PASSWORD: ${{ secrets.FLUXTV_KEYSTORE_PASSWORD }}
-          FLUXTV_KEY_ALIAS: ${{ secrets.FLUXTV_KEY_ALIAS }}
-          FLUXTV_KEY_PASSWORD: ${{ secrets.FLUXTV_KEY_PASSWORD }}
         run: >-
           bash ./gradlew --no-daemon
           :app:testDebugUnitTest :app:assembleRelease
           -PversionName=${{ steps.version.outputs.name }}
+
+      - name: Sign with the key lineage
+        env:
+          FLUXTV_KEYSTORE: ${{ env.RELEASE_KEYSTORE }}
+          FLUXTV_KEYSTORE_PASSWORD: ${{ secrets.FLUXTV_KEYSTORE_PASSWORD }}
+          FLUXTV_KEY_ALIAS: ${{ secrets.FLUXTV_KEY_ALIAS }}
+          FLUXTV_KEY_PASSWORD: ${{ secrets.FLUXTV_KEY_PASSWORD }}
+        run: |
+          if [ -z "$FLUXTV_KEYSTORE_PASSWORD" ]; then
+            echo "::error::The repository secret FLUXTV_KEYSTORE_PASSWORD is not set (see the top of this file)."
+            exit 1
+          fi
+          [ -n "$FLUXTV_KEY_ALIAS" ] || unset FLUXTV_KEY_ALIAS
+          [ -n "$FLUXTV_KEY_PASSWORD" ] || unset FLUXTV_KEY_PASSWORD
+          bash tools/sign_release.sh app/build/outputs/apk/release/app-release.apk
 
       - name: Check the signature
         env:
@@ -83,7 +94,12 @@ jobs:
         run: |
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
           apk=app/build/outputs/apk/release/app-release.apk
-          "$apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          "$apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          # Without v3 and its lineage, TVs on the older keys would refuse the update.
+          if ! grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::The APK carries no v3 signature, so no key lineage: TVs on the older keys could not update."
+            exit 1
+          fi
           if [ -n "$EXPECTED_CERT_SHA256" ]; then
             expected="$(echo "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')"
             if ! grep -q "certificate SHA-256 digest: $expected" "$RUNNER_TEMP/certs.txt"; then
