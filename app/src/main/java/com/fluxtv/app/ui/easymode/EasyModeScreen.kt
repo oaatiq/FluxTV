@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.AppViewModel
-import com.fluxtv.app.ui.BrowsePane
 import com.fluxtv.app.ui.EasyOverlay
 import com.fluxtv.app.ui.UiState
 import com.fluxtv.app.ui.components.overscan
@@ -43,9 +42,9 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 
 /**
  * The WATCHING state (§25). Full-screen video with transient overlays layered above it; playback
- * keeps running underneath the channel list (REQ-CH-003). Back steps back like other IPTV players:
- * watching -> the two-pane list on the current channel's category -> its categories column -> leave
- * the app. The last channel is remembered, so the next launch resumes it.
+ * keeps running underneath the channel list (REQ-CH-003). Back takes two presses: watching -> the
+ * two-pane list on the current channel's category -> leave the app. The last channel is remembered,
+ * so the next launch resumes it.
  *
  * Whatever keeps the channel from playing normally is on screen while it lasts: in the middle, a
  * [StreamNotice] (a slow start or a stall, a retry and why, a picture that stopped, sound only, a
@@ -127,9 +126,8 @@ fun EasyModeScreen(state: UiState, vm: AppViewModel, onExit: () -> Unit) {
 
     BackHandler(enabled = true) {
         when {
-            // The channels step up to the categories; the categories (and Settings beside them) leave the app.
-            state.overlay == EasyOverlay.CHANNEL_LIST && state.browsePane == BrowsePane.CHANNELS ->
-                vm.setBrowsePane(BrowsePane.CATEGORIES)
+            // The channel list, whichever of its columns has focus, is the last stop: Back leaves the
+            // app. (◀ is what steps from the channels to the categories and Settings.)
             state.overlay == EasyOverlay.CHANNEL_LIST -> onExit()
             state.overlay != EasyOverlay.NONE -> vm.closeOverlay()
             else -> vm.openChannelList()

@@ -297,8 +297,8 @@ uses only the arrows and OK, which every remote sends, and takes the same four p
 category. While there are no channels to list (*Loading channels…*, *Can't load the channels*, *No
 channels yet*), the screen shows **Open Settings** and OK opens it.
 
-Back steps back like other IPTV players: watching → the channel list → the categories column → leave
-FluxTV. The last channel (one watched for a few seconds) is remembered, so the next launch resumes
+Back takes two presses: watching → the channel list → leave FluxTV (◀ in the list is what reaches
+the categories and Settings). The last channel (one watched for a few seconds) is remembered, so the next launch resumes
 it. Choosing the channel that is already playing just closes the list, plays it on if something
 had paused it, and shows its banner, so it is also a way to see what is on. **Home** also leaves (the app stays in the background), and **Settings** (⚙ in the
 channel list, hold OK, or MENU) has **Exit FluxTV**. Accidental repeated presses are debounced to one action per press.

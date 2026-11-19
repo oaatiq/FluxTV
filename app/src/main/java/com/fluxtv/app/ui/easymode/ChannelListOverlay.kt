@@ -324,7 +324,7 @@ fun ChannelListOverlay(
             Spacer(Modifier.height(10.dp))
             BasicText(
                 when (pane) {
-                    BrowsePane.CHANNELS -> "OK: watch   •   Hold OK: favorite   •   ◀ / Back: categories"
+                    BrowsePane.CHANNELS -> "OK: watch   •   Hold OK: favorite   •   ◀: categories   •   Back: exit"
                     BrowsePane.CATEGORIES -> "OK / ▶: open   •   ◀: Settings   •   Back: exit"
                     BrowsePane.SETTINGS -> "OK: open Settings   •   ▶: categories   •   Back: exit"
                 },
