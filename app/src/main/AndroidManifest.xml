@@ -15,6 +15,13 @@
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!--
+        Android 14+ freezes an app in the background and holds back the screen-on broadcast it would
+        get when the TV wakes; a foreground service keeps FluxTV hearing it (WakeListenerService),
+        only on a TV and only while "Start FluxTV when the TV turns on" is on.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!--
         Installing FluxTV's own updates (Settings → Updates), and nothing else: FluxTV only ever
         installs a newer build of itself, signed with its own key. Android 8+ still asks the
         administrator once to allow it ("Install unknown apps"). The second permission is what lets
@@ -85,6 +92,15 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name=".WakeListenerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Hears the TV wake from standby, to bring the TV app back on screen" />
+        </service>
 
         <!--
             FluxTV's own updates: how an installation went (Android answers through it), and the
