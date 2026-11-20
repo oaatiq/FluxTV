@@ -31,9 +31,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  * It honors the same "Start FluxTV when the TV turns on" preference as the boot path and does
  * nothing while FluxTV is already the app on screen. Two limits are worth knowing: it can only work
  * while the process is alive — Android normally keeps it cached through a standby, but a process the
- * TV has killed has nothing left to hear the wake — and, as with the boot path, Android 10+ blocks
- * apps from opening themselves in the background unless the platform exempts them (see
- * [canStartItself]). Each wake is logged with what came of it, so a start the TV refused shows up in
+ * TV has killed has nothing left to hear the wake, and Android 14+ holds the broadcast back from one
+ * it has frozen in the background, which [WakeListenerService] prevents — and, as with the boot
+ * path, Android 10+ blocks apps from opening themselves in the background unless the platform
+ * exempts them (see [canStartItself]). Each wake is logged with what came of it, so a start the TV refused shows up in
  * the Diagnostics history instead of looking like a wake that never arrived.
  */
 class StandbyWatcher(context: Context, private val container: AppContainer) {

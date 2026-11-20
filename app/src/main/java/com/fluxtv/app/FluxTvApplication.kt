@@ -41,6 +41,9 @@ class FluxTvApplication : Application() {
         // Coming back from standby is announced to receivers registered in code only, so FluxTV
         // listens for it from here, for as long as the process lives.
         standbyWatcher = StandbyWatcher(this, container).also { if (television) it.register() }
+        // Android 14+ holds that broadcast back from an app it has frozen in the background; a small
+        // foreground service, while "Start FluxTV when the TV turns on" is on, keeps FluxTV hearing it.
+        if (television) WakeListenerService.install(this, container, appScope)
         // With Shizuku on the TV, a helper that outlives a force-stop of FluxTV starts it on a wake.
         shizukuWake = ShizukuWake(this, container).also { if (television) it.register() }
         // The same helper installs FluxTV's updates without a question, on a TV that has it.
