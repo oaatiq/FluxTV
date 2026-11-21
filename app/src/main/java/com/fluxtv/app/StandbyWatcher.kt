@@ -91,14 +91,45 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
 
     private fun onWake(action: String) {
         val signal = action.substringAfterLast('.')
-        // Checked before the gap below, so a late signal does not hold back the real wake after it.
-        if (!isAwake()) {
-            record("$signal: the TV is not awake, ignored")
+        if (isAwake()) {
+            onAwake(signal)
             return
         }
+        // Not awake yet is not the same as asleep: the broadcast can arrive while the display is still
+        // coming on (on a Raspberry Pi 5 the HDMI output waits for the TV, and FluxTV used to ignore
+        // that wake). A signal that arrived after the TV went back to sleep stays asleep, so only a
+        // display that is still off after the wait is taken for one.
+        scope.launch {
+            val startMs = SystemClock.elapsedRealtime()
+            while (SystemClock.elapsedRealtime() - startMs < AWAKE_WAIT_MS) {
+                delay(AWAKE_POLL_MS)
+                if (isAwake()) {
+                    record("$signal: the display came on after ${SystemClock.elapsedRealtime() - startMs} ms")
+                    onAwake(signal)
+                    return@launch
+                }
+            }
+            record("$signal: the TV is not awake, ignored")
+        }
+    }
+
+    /**
+     * True for the first wake signal in [WAKE_MIN_GAP_MS]. Signals can now be handled from the
+     * broadcast thread and from the wait in [onWake] at the same time, so the check and the update
+     * happen together.
+     */
+    @Synchronized
+    private fun claimWake(): Boolean {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastWakeMs < WAKE_MIN_GAP_MS) return
+        if (now - lastWakeMs < WAKE_MIN_GAP_MS) return false
         lastWakeMs = now
+        return true
+    }
+
+    private fun onAwake(signal: String) {
+        // Checked after the TV is known to be awake, so a late signal does not hold back the real wake
+        // after it.
+        if (!claimWake()) return
 
         if (isFluxTvOnScreen()) {
             record("$signal: FluxTV is already on screen")
@@ -152,6 +183,10 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
 
     private companion object {
         const val WAKE_MIN_GAP_MS = 5_000L
+
+        /** How long a wake signal waits for the display to come on before it is taken for a late one. */
+        const val AWAKE_WAIT_MS = 5_000L
+        const val AWAKE_POLL_MS = 250L
         const val SETTINGS_TIMEOUT_MS = 3_000L
 
         /** Long enough for a slow TV to put the activity on screen before the start is judged. */
