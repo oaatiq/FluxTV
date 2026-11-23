@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -164,6 +167,11 @@ fun FluxButton(
     }
 }
 
+/**
+ * A setting that is on or off. Its state always keeps its room at the right, however long the label:
+ * a long label wraps onto more lines instead of squeezing the state out of sight, as it did on a
+ * phone held upright. On a phone, the state is also a switch, as phones show one, and ON / OFF beside it.
+ */
 @Composable
 fun FluxToggleRow(
     label: String,
@@ -173,6 +181,7 @@ fun FluxToggleRow(
     onToggle: (Boolean) -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
+    val touch = LocalTouchUi.current
     val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier
@@ -180,21 +189,62 @@ fun FluxToggleRow(
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clip(shape)
-            .clickable { onToggle(!checked) }
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onToggle)
             .background(if (focused) FluxSurfaceVariant else FluxSurface)
-            .border(3.dp, if (focused) FluxAccent else Color.Transparent, shape)
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .border(
+                if (touch) 2.dp else 3.dp,
+                when {
+                    focused -> FluxAccent
+                    // On a phone an option that is on is outlined too, to be seen at a glance.
+                    touch && checked -> FluxAccent.copy(alpha = 0.6f)
+                    else -> Color.Transparent
+                },
+                shape
+            )
+            .padding(horizontal = if (touch) 18.dp else 24.dp, vertical = if (touch) 14.dp else 18.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        BasicText(label, style = TextStyle(color = FluxOnSurface, fontSize = 22.sp))
+        BasicText(
+            label,
+            modifier = Modifier.weight(1f),
+            style = TextStyle(color = FluxOnSurface, fontSize = if (touch) 19.sp else 22.sp)
+        )
+        Spacer(Modifier.width(16.dp))
         BasicText(
             if (checked) "ON" else "OFF",
+            maxLines = 1,
+            softWrap = false,
             style = TextStyle(
                 color = if (checked) FluxAccent else FluxMuted,
-                fontSize = 22.sp,
+                fontSize = if (touch) 16.sp else 22.sp,
                 fontWeight = FontWeight.Bold
             )
+        )
+        if (touch) {
+            Spacer(Modifier.width(10.dp))
+            SwitchMark(checked)
+        }
+    }
+}
+
+/** The switch of a [FluxToggleRow] on a phone: filled, its knob to the right, when on. */
+@Composable
+private fun SwitchMark(checked: Boolean) {
+    val track = RoundedCornerShape(50)
+    Box(
+        modifier = Modifier
+            .size(width = 52.dp, height = 30.dp)
+            .clip(track)
+            .background(if (checked) FluxAccent else FluxSurfaceVariant)
+            .border(2.dp, if (checked) FluxAccent else FluxMuted, track)
+            .padding(4.dp),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Box(
+            Modifier
+                .size(if (checked) 22.dp else 18.dp)
+                .clip(CircleShape)
+                .background(if (checked) OnAccent else FluxMuted)
         )
     }
 }
@@ -453,6 +503,17 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         BasicText(label, style = TextStyle(color = FluxMuted, fontSize = 18.sp))
-        BasicText(value, style = TextStyle(color = FluxOnSurface, fontSize = 18.sp, fontWeight = FontWeight.Medium))
+        Spacer(Modifier.width(16.dp))
+        // A long value wraps under itself on a narrow phone, rather than crushing the label.
+        BasicText(
+            value,
+            modifier = Modifier.weight(1f, fill = false),
+            style = TextStyle(
+                color = FluxOnSurface,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.End
+            )
+        )
     }
 }

@@ -216,14 +216,23 @@ private fun AdminMenu(
         FluxButton("Playlists", Modifier.formWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
         FluxButton("Channels & favorites", Modifier.formWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
         FluxButton("Preferences", Modifier.formWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
-        // Side by side, as the two below, so the menu keeps its five rows and still fits a 720p screen.
-        Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FluxButton("Diagnostics", Modifier.weight(1f)) { onSelect(AdminSection.DIAGNOSTICS) }
-            FluxButton("Updates", Modifier.weight(1f)) { onSelect(AdminSection.UPDATES) }
-        }
-        Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
-            FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
+        if (touch) {
+            // A phone held upright is too narrow for two side by side ("Diagnostic-s" broke in two),
+            // and has the height for one per row; held sideways, the menu scrolls.
+            FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
+            FluxButton("Updates", Modifier.formWidth(0.55f)) { onSelect(AdminSection.UPDATES) }
+            FluxButton("Back to TV", Modifier.formWidth(0.55f)) { onExit() }
+            FluxButton("Exit FluxTV", Modifier.formWidth(0.55f)) { onExitApp() }
+        } else {
+            // Side by side, as the two below, so the menu keeps its five rows and still fits a 720p screen.
+            Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FluxButton("Diagnostics", Modifier.weight(1f)) { onSelect(AdminSection.DIAGNOSTICS) }
+                FluxButton("Updates", Modifier.weight(1f)) { onSelect(AdminSection.UPDATES) }
+            }
+            Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
+                FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
+            }
         }
     }
 }
