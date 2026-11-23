@@ -75,9 +75,17 @@ class FluxPlayerController(
     /**
      * Whether FluxTV is on screen to be watched: set by tuning and [onResume], cleared by [onPause]
      * and [onStop]. Automatic recovery only starts playback while it is set, so a retry or a network
-     * coming back never plays a channel over Settings, another app, or a TV in standby.
+     * coming back never plays a channel over Settings, another app, or a TV in standby. Also set while
+     * a phone plays on with its screen off ([continueWithScreenOff]), which is listened to.
      */
     private var onScreen = false
+
+    /**
+     * The video tracks are switched off: a phone plays the channel's sound alone while its screen is
+     * off, and decoding a picture nobody sees would only spend the battery. Until the next tune,
+     * which builds the picture again on the new surface.
+     */
+    private var soundOnly = false
 
     private val recovery = RecoveryPolicy()
     private var lastLiveRejoinMs = -LIVE_REJOIN_MIN_GAP_MS
@@ -193,6 +201,14 @@ class FluxPlayerController(
     private val _pausedBySystem = MutableStateFlow(false)
     val pausedBySystem: StateFlow<Boolean> = _pausedBySystem.asStateFlow()
 
+    /**
+     * A phone's screen went off with the channel playing, and the channel plays on, sound only
+     * ([continueWithScreenOff]). Never on a TV. Cleared when FluxTV is back on screen, when the sound
+     * is stopped ([endScreenOffPlayback]), and when Android pauses it for good.
+     */
+    private val _playingWithScreenOff = MutableStateFlow(false)
+    val playingWithScreenOff: StateFlow<Boolean> = _playingWithScreenOff.asStateFlow()
+
     init {
         scope.launch { watchNetwork() }
     }
@@ -228,6 +244,9 @@ class FluxPlayerController(
         slowRetryJob?.cancel()
         currentChannel = channel
         onScreen = true
+        // A tune is FluxTV back on screen: the picture again, from the new decoder.
+        _playingWithScreenOff.value = false
+        setSoundOnly(p, false)
         recovery.reset()
         decoderRetried = false
         loadAsHls = firstTryAsHls(channel.url)
@@ -299,6 +318,9 @@ class FluxPlayerController(
 
     fun onResume() {
         onScreen = true
+        // Back on screen: the sound goes on, and the picture comes back with the re-tune that follows
+        // once the new video surface is in place (AppViewModel.retuneIfReturning).
+        _playingWithScreenOff.value = false
         val p = bundle?.player ?: return
         if (currentChannel == null) return
         p.play()
@@ -326,8 +348,14 @@ class FluxPlayerController(
      * edge once the new surface is in place, which also builds a fresh decoder for it.
      */
     fun onStop() {
+        if (stopPlayback() && currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
+    }
+
+    /** Stops the channel off screen; false if there was no player to stop. */
+    private fun stopPlayback(): Boolean {
         onScreen = false
-        val p = bundle?.player ?: return
+        _playingWithScreenOff.value = false
+        val p = bundle?.player ?: return false
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
@@ -335,10 +363,53 @@ class FluxPlayerController(
         frozenPictureWatch?.cancel()
         stallStartedMs = 0L
         p.stop()
-        if (currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
+        setSoundOnly(p, false)
+        return true
+    }
+
+    /**
+     * A phone's screen has gone off with the channel playing, and "Keep playing with the screen off"
+     * is on: the channel plays on, sound only, instead of stopping as in [onStop]. Recovery keeps
+     * working as on screen, so a channel that drops comes back by itself. FluxTV coming back on
+     * screen re-tunes it as usual, with the picture. Only ever called on a phone (AppViewModel);
+     * false when there is nothing to play on.
+     */
+    fun continueWithScreenOff(): Boolean {
+        val p = bundle?.player ?: return false
+        val channel = currentChannel ?: return false
+        onScreen = true
+        setSoundOnly(p, true)
+        frozenPictureWatch?.cancel()
+        _playingWithScreenOff.value = true
+        // The activity's pause may have paused it on the way.
+        p.play()
+        if (p.playbackState == Player.STATE_BUFFERING && bufferingWatchdog?.isActive != true) startBufferingWatchdog()
+        logEvent("standby", "The phone's screen went off: ${channel.name} plays on, sound only")
+        return true
+    }
+
+    /**
+     * Ends [continueWithScreenOff]: Stop on the phone's lock screen or notification, the phone unlocked
+     * into another app, or Android pausing the sound for good. The channel stops as if FluxTV had
+     * left the screen, and is tuned again when FluxTV is next on screen.
+     */
+    fun endScreenOffPlayback(reason: String) {
+        if (!_playingWithScreenOff.value) return
+        logEvent("standby", "$reason: playback stopped")
+        stopPlayback()
+    }
+
+    private fun setSoundOnly(p: ExoPlayer, on: Boolean) {
+        if (soundOnly == on) return
+        soundOnly = on
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, on)
+            .build()
     }
 
     fun release() {
+        _playingWithScreenOff.value = false
+        soundOnly = false
         retryJob?.cancel()
         bufferingWatchdog?.cancel()
         slowRetryJob?.cancel()
@@ -396,6 +467,12 @@ class FluxPlayerController(
         created.evenVolume.leveler.enabled = evenVolume
         created.player.addListener(playerListener)
         created.player.addAnalyticsListener(analyticsListener)
+        // A player rebuilt while a phone plays with its screen off stays sound only.
+        if (soundOnly) {
+            created.player.trackSelectionParameters = created.player.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+                .build()
+        }
         bundle = created
         _activePlayer.value = created.player
     }
@@ -951,6 +1028,14 @@ class FluxPlayerController(
                 reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
                 )
+            // With the screen off there is no Play to press: headphones unplugged or another app's
+            // sound ends the listening, rather than leave the phone holding a paused channel.
+            if (_pausedBySystem.value && _playingWithScreenOff.value) {
+                endScreenOffPlayback(
+                    if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) "Headphones unplugged with the screen off"
+                    else "Another app took the sound with the screen off"
+                )
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {

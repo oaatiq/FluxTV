@@ -735,6 +735,20 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             FluxChip("Up to 1080p", state.settings.maxVideoHeight == 1080) { vm.setMaxVideoHeight(1080) }
         }
 
+        // Phones and tablets only: a TV box stops when its screen goes off, as it always has.
+        if (touch) {
+            FluxToggleRow(
+                "Keep playing with the screen off",
+                state.settings.playWithScreenOff,
+                Modifier.formWidth(0.7f)
+            ) { vm.setPlayWithScreenOff(it) }
+            BasicText(
+                "The channel's sound goes on when the phone's screen turns off, with Stop on the lock " +
+                    "screen. The picture comes back when you return to FluxTV. Uses more battery and data.",
+                style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+            )
+        }
+
         if (!touch) {
             FluxToggleRow(
                 "Match TV refresh rate to the video",

@@ -108,7 +108,9 @@ class UpdateManager(
     private val httpClient: () -> OkHttpClient,
     private val television: Boolean,
     /** The player's estimate of the line's speed, in bits per second; 0 when it has none. */
-    private val lineBitsPerSecond: () -> Long
+    private val lineBitsPerSecond: () -> Long,
+    /** A phone plays a channel with its screen off: FluxTV is in use though nothing is on screen. */
+    private val playingWithScreenOff: () -> Boolean = { false }
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -522,6 +524,9 @@ class UpdateManager(
             if (!settings().autoUpdate) return
             if (r.blockedVersionCode == info.versionCode || now < r.nextTryMs) return
         }
+        // Someone is listening with the phone's screen off: installing would close FluxTV and cut the
+        // sound. The listening's end counts as leaving the screen (onLeftScreen), and lets it in.
+        if (trigger != InstallTrigger.MANUAL && playingWithScreenOff()) return
         // The helper is started anew with FluxTV's process: give it a moment to be there.
         helper?.awaitHelper(HELPER_WAIT_MS)
 

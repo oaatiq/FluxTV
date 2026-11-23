@@ -2,12 +2,14 @@ package com.fluxtv.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.fluxtv.app.AppContainer
 import com.fluxtv.app.FluxTvApplication
+import com.fluxtv.app.ScreenOffPlaybackService
 import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.guide.GuideOutcome
 import com.fluxtv.app.data.guide.GuideRepository
@@ -1012,6 +1014,11 @@ class AppViewModel(
         viewModelScope.launch { container.settingsRepository.setEvenVolume(value) }
     }
 
+    /** Phone or tablet only: the sound plays on when the screen goes off. */
+    fun setPlayWithScreenOff(value: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setPlayWithScreenOff(value) }
+    }
+
     fun setProgrammeInList(value: Boolean) {
         viewModelScope.launch { container.settingsRepository.setProgrammeInList(value) }
     }
@@ -1103,6 +1110,9 @@ class AppViewModel(
     fun onActivityPause() {
         resumed = false
         surfaceWatchJob?.cancel()
+        // The phone's screen is going off and the sound is to play on: no pause on the way, which
+        // would be a gap in it. onActivityStop takes it from here.
+        if (soundGoesOnWithScreenOff()) return
         container.playerController.onPause()
     }
 
@@ -1118,10 +1128,46 @@ class AppViewModel(
         // A setup session lasts only while its screen is on the TV.
         endPhoneSetup()
         if (_state.value.currentChannel != null) retuneWhenOnScreen = true
-        container.playerController.onStop()
+        if (!(soundGoesOnWithScreenOff() && playOnWithScreenOff())) container.playerController.onStop()
         // Standby can be followed by the power going off: a channel still waiting to be saved is
         // saved now.
         if (lastChannelJob?.isActive == true) saveLastChannel(0)
+    }
+
+    /**
+     * Whether FluxTV leaving the screen now is a phone's screen going off with a channel playing, and
+     * "Keep playing with the screen off" is on: then the sound plays on. Never on a TV (a TV box can
+     * have its screen "off" while its HDMI output is still shown), never for a channel that is not
+     * playing (waiting for its picture, given up on, or paused by Android), and never behind
+     * "Updating FluxTV…". Another app taking the screen stops the channel as before.
+     */
+    private fun soundGoesOnWithScreenOff(): Boolean {
+        if (container.isTelevision) return false
+        val st = _state.value
+        if (!st.settings.playWithScreenOff || st.mode != AppMode.EASY) return false
+        val channel = st.currentChannel ?: return false
+        if (tuneAwaitsSurface) return false
+        val controller = container.playerController
+        val playback = controller.status.value
+        if (playback.channel?.stableId != channel.stableId) return false
+        if (playback.phase == PlaybackPhase.IDLE || playback.phase == PlaybackPhase.FAILED) return false
+        if (controller.pausedBySystem.value) return false
+        if (container.updateManager.status.value.updatingOnScreen) return false
+        val power = getApplication<Application>().getSystemService(PowerManager::class.java) ?: return false
+        return !power.isInteractive
+    }
+
+    /**
+     * Plays the channel on, sound only, with the phone's screen off, under a media foreground service
+     * that keeps FluxTV running and puts Stop on the lock screen. False if Android refused the
+     * service, in which case the channel stops as it always did.
+     */
+    private fun playOnWithScreenOff(): Boolean {
+        val controller = container.playerController
+        if (!controller.continueWithScreenOff()) return false
+        if (ScreenOffPlaybackService.start(getApplication())) return true
+        controller.endScreenOffPlayback("Android did not let FluxTV play on with the screen off")
+        return false
     }
 
     /** The video surface has been (re)created, so the player has somewhere to put the picture. */

@@ -70,6 +70,7 @@ private object Keys {
     val PROGRAMME_IN_LIST = booleanPreferencesKey("programme_in_list")
     val AUTO_UPDATE = booleanPreferencesKey("auto_update")
     val UPDATE_URL = stringPreferencesKey("update_url")
+    val PLAY_WITH_SCREEN_OFF = booleanPreferencesKey("play_with_screen_off")
 }
 
 /** Where versions before multiple playlists kept their one playlist; read once by [SinglePlaylistMigration]. */
@@ -170,7 +171,12 @@ data class FluxSettings(
     /** Whether a newer FluxTV is downloaded and installed by itself (Settings → Updates). */
     val autoUpdate: Boolean = true,
     /** Where FluxTV looks for a newer build; blank for the address it was built with. */
-    val updateUrl: String = ""
+    val updateUrl: String = "",
+    /**
+     * On a phone or tablet: whether the channel's sound plays on when the screen goes off. Never on a
+     * TV, whatever this says (a backup restored from a phone could carry it there).
+     */
+    val playWithScreenOff: Boolean = false
 ) {
     /** The User-Agent for the playlists and for channels whose playlist entry names none. */
     val effectiveUserAgent: String get() = headerValue(userAgent).ifBlank { DEFAULT_USER_AGENT }
@@ -218,7 +224,8 @@ class SettingsRepository(private val context: Context) {
             evenVolume = p[Keys.EVEN_VOLUME] ?: true,
             programmeInList = p[Keys.PROGRAMME_IN_LIST] ?: true,
             autoUpdate = p[Keys.AUTO_UPDATE] ?: true,
-            updateUrl = p[Keys.UPDATE_URL] ?: ""
+            updateUrl = p[Keys.UPDATE_URL] ?: "",
+            playWithScreenOff = p[Keys.PLAY_WITH_SCREEN_OFF] ?: false
         )
     }
 
@@ -315,6 +322,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAutoUpdate(value: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_UPDATE] = value }
+    }
+
+    suspend fun setPlayWithScreenOff(value: Boolean) {
+        context.dataStore.edit { it[Keys.PLAY_WITH_SCREEN_OFF] = value }
     }
 
     /** Blank goes back to the address FluxTV was built with. */

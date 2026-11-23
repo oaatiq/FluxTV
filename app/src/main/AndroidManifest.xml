@@ -22,6 +22,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!--
+        On a phone or tablet only, with "Keep playing with the screen off" on: the channel's sound
+        plays on while the screen is off, in a media foreground service (ScreenOffPlaybackService).
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!--
         Installing FluxTV's own updates (Settings → Updates), and nothing else: FluxTV only ever
         installs a newer build of itself, signed with its own key. Android 8+ still asks the
         administrator once to allow it ("Install unknown apps"). The second permission is what lets
@@ -101,6 +106,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Hears the TV wake from standby, to bring the TV app back on screen" />
         </service>
+
+        <!--
+            A phone playing a channel's sound with its screen off (never a TV). Started by FluxTV
+            itself as the screen goes off; only Android and FluxTV reach it.
+        -->
+        <service
+            android:name=".ScreenOffPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!--
             FluxTV's own updates: how an installation went (Android answers through it), and the

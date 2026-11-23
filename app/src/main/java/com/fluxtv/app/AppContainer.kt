@@ -51,6 +51,8 @@ class AppContainer(context: Context) {
         settingsRepository,
         diagnosticsStore,
         { httpClient },
-        isTelevision
-    ) { playerController.diagnostics.value.bandwidthBps }
+        isTelevision,
+        lineBitsPerSecond = { playerController.diagnostics.value.bandwidthBps },
+        playingWithScreenOff = { playerController.playingWithScreenOff.value }
+    )
 }

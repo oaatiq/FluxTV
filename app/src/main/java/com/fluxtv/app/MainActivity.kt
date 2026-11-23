@@ -229,8 +229,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         viewModel.onActivityStop()
-        // Off screen is when an update that was waiting can go in without anyone seeing it.
-        (application as FluxTvApplication).container.updateManager.onLeftScreen()
+        // Off screen is when an update that was waiting can go in without anyone seeing it; not while
+        // a phone plays on with its screen off, whose end is that moment instead (ScreenOffPlaybackService).
+        if (!viewModel.controller.playingWithScreenOff.value) {
+            (application as FluxTvApplication).container.updateManager.onLeftScreen()
+        }
         // The sensor is not kept running off screen; the screen stays as the button left it.
         orientationRelease?.disable()
         orientationRelease = null
