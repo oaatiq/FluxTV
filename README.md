@@ -427,7 +427,16 @@ or says that it is off or not possible for this sound.
 Reached only by a deliberate step — **⚙ Settings** at the far left of the channel list (OK, ◀, ◀, OK),
 **hold OK**, or the **MENU** button — so watching and changing channels never lead into it by
 themselves; the ⚙ works with every remote (see [Settings with any remote](#remote-control)).
-Optionally protect it with a **PIN** (Preferences). Sections:
+Optionally protect it with a **PIN** (Preferences).
+
+On a TV, Settings opens on a menu down the left of the screen — the five sections below, then
+**Back to TV** and **Exit FluxTV** under a line — and a panel on the right about the line the remote
+is on: what that section is for and where things stand (the playlist in use and its channels, the
+favorites, the preferences, the last channel's decoding, the version and whether it is up to date).
+**▲ ▼** move through the menu, one line at a time; **OK** or **▶** opens a section; **Back** returns to
+TV. Each section says where it is above its title (*Settings ›*, or *Settings › Playlists ›*) and what
+Back does at its foot, and Back returns to the menu with the section just left in focus. The time is
+at the top right, as in the channel list. Sections:
 
 - **Playlists** — add playlists (from a phone, or typed), see the saved ones with the one in use
   marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link,

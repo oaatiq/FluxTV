@@ -19,6 +19,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +94,7 @@ import java.util.Date
 import java.util.Locale
 
 /** [PLAYLIST] is one saved playlist; it, [ADD_BY_PHONE] and [ADD_BY_TYPING] open from [PLAYLISTS]. */
-private enum class AdminSection {
+internal enum class AdminSection {
     MENU, PLAYLISTS, PLAYLIST, ADD_BY_PHONE, ADD_BY_TYPING, CHANNELS, PREFERENCES, DIAGNOSTICS, UPDATES
 }
 
@@ -98,6 +106,10 @@ private enum class AdminSection {
  *
  * Playlists are managed here and only here: Easy Mode never names a playlist or offers a choice of
  * one, and shows the channels of the one in use.
+ *
+ * On a TV, the first screen is a menu with a panel about the line in focus beside it
+ * ([TvSettingsHome]), and every other screen says where it is above its title ("Settings ›") and what
+ * Back does at its foot. Back to the menu, the focus is on the part of Settings just left.
  *
  * On a phone, the same screens are worked by touch: buttons wrap onto more lines where the screen is
  * narrow, each screen has a Back button at the top, and what only a TV does (starting when it turns
@@ -116,6 +128,9 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
         mutableStateOf(if (state.settings.playlists.isEmpty()) AdminSection.PLAYLISTS else AdminSection.MENU)
     }
     var playlistId by remember { mutableStateOf<String?>(null) }
+    // The part of Settings last opened from the menu, where the focus is when Back returns to it.
+    var menuKey by remember { mutableStateOf<String?>(null) }
+    val open: (AdminSection) -> Unit = { menuKey = it.name; section = it }
     val goBack: () -> Unit = {
         when (section) {
             AdminSection.MENU -> vm.exitAdmin()
@@ -126,19 +141,37 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
     }
     BackHandler(enabled = true) { goBack() }
 
+    val touch = LocalTouchUi.current
+    val inPlaylists = section in PLAYLIST_SCREENS
     Column(Modifier.fillMaxSize().overscan()) {
-        if (LocalTouchUi.current && section != AdminSection.MENU) {
-            TouchBackButton(if (section in PLAYLIST_SCREENS) "Playlists" else "Settings", onClick = goBack)
-            Spacer(Modifier.height(8.dp))
+        if (section != AdminSection.MENU) {
+            if (touch) {
+                TouchBackButton(if (inPlaylists) "Playlists" else "Settings", onClick = goBack)
+                Spacer(Modifier.height(8.dp))
+            } else {
+                TvBreadcrumb(if (inPlaylists) listOf("Settings", "Playlists") else listOf("Settings"))
+                Spacer(Modifier.height(4.dp))
+            }
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (section) {
-                AdminSection.MENU -> AdminMenu(
-                    state,
-                    onSelect = { section = it },
-                    onExit = { vm.exitAdmin() },
-                    onExitApp = onExitApp
-                )
+                AdminSection.MENU -> if (touch) {
+                    AdminMenu(
+                        state,
+                        onSelect = open,
+                        onExit = { vm.exitAdmin() },
+                        onExitApp = onExitApp
+                    )
+                } else {
+                    TvAdminMenu(
+                        state,
+                        vm,
+                        initialKey = menuKey,
+                        onSelect = open,
+                        onExit = { vm.exitAdmin() },
+                        onExitApp = onExitApp
+                    )
+                }
                 AdminSection.PLAYLISTS -> PlaylistsSection(
                     state,
                     vm,
@@ -159,6 +192,10 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
                 AdminSection.DIAGNOSTICS -> DiagnosticsSection(state, vm)
                 AdminSection.UPDATES -> UpdatesSection(state, vm)
             }
+        }
+        if (!touch && section != AdminSection.MENU) {
+            Spacer(Modifier.height(10.dp))
+            TvKeyHint(if (inPlaylists) "Back: Playlists" else "Back: Settings")
         }
     }
 }
@@ -192,6 +229,7 @@ private fun PinGate(expected: String, onUnlock: () -> Unit, onCancel: () -> Unit
     }
 }
 
+/** The first screen of Settings on a phone: one button per row, the screen being narrow. */
 @Composable
 private fun AdminMenu(
     state: UiState,
@@ -199,10 +237,7 @@ private fun AdminMenu(
     onExit: () -> Unit,
     onExitApp: () -> Unit
 ) {
-    val first = remember { FocusRequester() }
-    val touch = LocalTouchUi.current
-    // The remote needs somewhere to start; on a touch screen nothing is picked until it is touched.
-    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
+    // On a touch screen nothing is picked until it is touched: no first focus.
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SectionTitle("FluxTV Settings")
         BasicText(
@@ -213,28 +248,172 @@ private fun AdminMenu(
             style = TextStyle(color = FluxMuted, fontSize = 18.sp)
         )
         Spacer(Modifier.height(8.dp))
-        FluxButton("Playlists", Modifier.formWidth(0.55f), focusRequester = first) { onSelect(AdminSection.PLAYLISTS) }
+        // A phone held upright is too narrow for two side by side ("Diagnostic-s" broke in two),
+        // and has the height for one per row; held sideways, the menu scrolls.
+        FluxButton("Playlists", Modifier.formWidth(0.55f)) { onSelect(AdminSection.PLAYLISTS) }
         FluxButton("Channels & favorites", Modifier.formWidth(0.55f)) { onSelect(AdminSection.CHANNELS) }
         FluxButton("Preferences", Modifier.formWidth(0.55f)) { onSelect(AdminSection.PREFERENCES) }
-        if (touch) {
-            // A phone held upright is too narrow for two side by side ("Diagnostic-s" broke in two),
-            // and has the height for one per row; held sideways, the menu scrolls.
-            FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
-            FluxButton("Updates", Modifier.formWidth(0.55f)) { onSelect(AdminSection.UPDATES) }
-            FluxButton("Back to TV", Modifier.formWidth(0.55f)) { onExit() }
-            FluxButton("Exit FluxTV", Modifier.formWidth(0.55f)) { onExitApp() }
-        } else {
-            // Side by side, as the two below, so the menu keeps its five rows and still fits a 720p screen.
-            Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FluxButton("Diagnostics", Modifier.weight(1f)) { onSelect(AdminSection.DIAGNOSTICS) }
-                FluxButton("Updates", Modifier.weight(1f)) { onSelect(AdminSection.UPDATES) }
-            }
-            Row(Modifier.formWidth(0.55f), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FluxButton("Back to TV", Modifier.weight(1f)) { onExit() }
-                FluxButton("Exit FluxTV", Modifier.weight(1f)) { onExitApp() }
-            }
-        }
+        FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
+        FluxButton("Updates", Modifier.formWidth(0.55f)) { onSelect(AdminSection.UPDATES) }
+        FluxButton("Back to TV", Modifier.formWidth(0.55f)) { onExit() }
+        FluxButton("Exit FluxTV", Modifier.formWidth(0.55f)) { onExitApp() }
     }
+}
+
+/**
+ * The first screen of Settings on a TV ([TvSettingsHome]), with what it says about each part of
+ * Settings read from where FluxTV keeps it: the playlist in use, the favorites, the preferences, the
+ * last channel's diagnostics and the updater.
+ */
+@Composable
+private fun TvAdminMenu(
+    state: UiState,
+    vm: AppViewModel,
+    initialKey: String?,
+    onSelect: (AdminSection) -> Unit,
+    onExit: () -> Unit,
+    onExitApp: () -> Unit
+) {
+    val diagnostics by vm.controller.diagnostics.collectAsStateWithLifecycle()
+    val updates by vm.updates.collectAsStateWithLifecycle()
+    val sections = tvMenuSections(state, diagnostics, updates, vm.installedVersion, onSelect)
+    val actions = tvMenuActions(state, onExit, onExitApp)
+    TvSettingsHome(sections, actions, initialKey)
+}
+
+/** The five parts of Settings in the TV menu, each with its state and what its panel says. */
+internal fun tvMenuSections(
+    state: UiState,
+    d: DiagnosticsSnapshot,
+    updates: UpdateStatus,
+    installedVersion: String,
+    onSelect: (AdminSection) -> Unit
+): List<TvMenuEntry> {
+    val settings = state.settings
+    val active = settings.activePlaylist
+    val channelCount = state.channels.size
+    val favoriteCount = state.channels.count { it.stableId in state.favorites }
+    return listOf(
+        TvMenuEntry(
+            key = AdminSection.PLAYLISTS.name,
+            icon = Icons.AutoMirrored.Filled.List,
+            title = "Playlists",
+            value = active?.name ?: "None yet",
+            description = "Add a playlist from your phone or by typing its link, and choose the one TV " +
+                "shows. Each saved playlist can be refreshed, renamed, given a programme guide or deleted.",
+            facts = listOfNotNull(
+                "In use" to (active?.let { "“${it.name}”" } ?: "None yet"),
+                "Channels" to if (state.isRefreshing) "Loading…" else channelCount.toString(),
+                "Updated" to formatTime(state.lastUpdatedMs),
+                ("Saved playlists" to settings.playlists.size.toString()).takeIf { settings.playlists.size > 1 }
+            ),
+            onClick = { onSelect(AdminSection.PLAYLISTS) }
+        ),
+        TvMenuEntry(
+            key = AdminSection.CHANNELS.name,
+            icon = Icons.Filled.Star,
+            title = "Channels & favorites",
+            value = if (favoriteCount > 0) "$favoriteCount ★" else null,
+            description = "Mark the channels watched most with ★. Easy Mode can then show only those, so a " +
+                "long list stays short. Each playlist keeps its own favorites.",
+            facts = listOf(
+                "Favorites" to if (favoriteCount > 0) "$favoriteCount of $channelCount" else "None yet",
+                "Easy Mode shows" to if (settings.favoritesOnly) "Favorites only" else "All channels"
+            ),
+            onClick = { onSelect(AdminSection.CHANNELS) }
+        ),
+        TvMenuEntry(
+            key = AdminSection.PREFERENCES.name,
+            icon = Icons.Filled.Settings,
+            title = "Preferences",
+            description = "How TV looks and plays: text size, volume, picture quality, starting with the " +
+                "TV, playlist refresh, the player name and the Settings PIN.",
+            facts = listOf(
+                "Text size on TV" to textSizeLabel(settings.textSizePercent),
+                "Even volume" to onOff(settings.evenVolume),
+                "Maximum quality" to qualityLabel(settings.maxVideoHeight),
+                "Start with the TV" to onOff(settings.startOnBoot),
+                "Settings PIN" to if (settings.adminPin.isBlank()) "None" else "Set"
+            ),
+            onClick = { onSelect(AdminSection.PREFERENCES) }
+        ),
+        TvMenuEntry(
+            key = AdminSection.DIAGNOSTICS.name,
+            icon = Icons.Filled.Build,
+            title = "Diagnostics",
+            description = "How the channel is playing (decoding, picture, bitrate, buffering) and a " +
+                "history of what happened, to find out why a channel stops.",
+            facts = listOf(
+                "FluxTV version" to installedVersion,
+                "Channel" to (d.channelName ?: "—"),
+                "Decoding" to decodeLabel(d),
+                "Resolution" to if (d.videoWidth > 0) "${d.videoWidth}×${d.videoHeight}" else "—"
+            ),
+            onClick = { onSelect(AdminSection.DIAGNOSTICS) }
+        ),
+        TvMenuEntry(
+            key = AdminSection.UPDATES.name,
+            icon = Icons.Filled.Refresh,
+            title = "Updates",
+            value = updateShortStatus(updates),
+            description = "FluxTV looks for new versions and installs them when nobody is watching. " +
+                "See the version running and the newest, or install one now.",
+            facts = listOf(
+                "This FluxTV" to installedVersion,
+                "Newest" to (updates.latest?.label ?: if (updates.phase == UpdatePhase.UP_TO_DATE) "The same" else "—"),
+                "Automatic updates" to onOff(settings.autoUpdate),
+                "Last looked" to if (updates.lastCheckMs > 0) formatTime(updates.lastCheckMs) else "Not yet"
+            ),
+            onClick = { onSelect(AdminSection.UPDATES) }
+        )
+    )
+}
+
+/** Back to TV and Exit FluxTV, under the parts of Settings in the TV menu. */
+internal fun tvMenuActions(state: UiState, onExit: () -> Unit, onExitApp: () -> Unit): List<TvMenuEntry> {
+    val channel = state.currentChannel
+    return listOf(
+        TvMenuEntry(
+            key = "BACK_TO_TV",
+            icon = Icons.Filled.PlayArrow,
+            title = "Back to TV",
+            description = "Close Settings and go back to watching. Back on the remote does the same.",
+            facts = listOfNotNull(channel?.let { "Channel" to "${it.number}  ${it.name}" }),
+            opens = false,
+            onClick = onExit
+        ),
+        TvMenuEntry(
+            key = "EXIT_APP",
+            icon = Icons.AutoMirrored.Filled.ExitToApp,
+            title = "Exit FluxTV",
+            description = "Close FluxTV. Open it again from the TV's home screen: it comes back on the last " +
+                "channel." + if (state.settings.startOnBoot) " It also opens by itself when the TV turns on." else "",
+            opens = false,
+            onClick = onExitApp
+        )
+    )
+}
+
+private fun onOff(on: Boolean): String = if (on) "On" else "Off"
+
+private fun textSizeLabel(percent: Int): String = when (percent) {
+    TEXT_SIZE_LARGE -> "Large"
+    TEXT_SIZE_EXTRA_LARGE -> "Extra large"
+    else -> "Normal"
+}
+
+private fun qualityLabel(maxHeight: Int): String = if (maxHeight > 0) "Up to ${maxHeight}p" else "Auto"
+
+/** Where the updater is, in a word or two, at the right of Updates in the TV menu. */
+private fun updateShortStatus(u: UpdateStatus): String = when (u.phase) {
+    UpdatePhase.IDLE -> "Not checked yet"
+    UpdatePhase.CHECKING -> "Checking…"
+    UpdatePhase.UP_TO_DATE -> "Up to date"
+    UpdatePhase.AVAILABLE -> if (u.blocked) "Can't install" else "New version"
+    UpdatePhase.DOWNLOADING ->
+        "Downloading" + if (u.totalBytes > 0) " ${u.downloadedBytes * 100 / u.totalBytes}%" else "…"
+    UpdatePhase.READY -> if (u.blocked) "Can't install" else "Ready to install"
+    UpdatePhase.INSTALLING -> "Installing…"
 }
 
 /** Settings → Playlists: the saved playlists, the one in use marked, and the ways to add one. */
