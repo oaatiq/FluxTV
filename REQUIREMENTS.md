@@ -282,7 +282,9 @@ implementation.
   per tune, as before); a picture that freezes again after those shows *The picture has stopped.*
   (a TV with the pause sign) and is restarted every 30 s while it stays stopped, instead of being
   left frozen until the next channel change (`startFrozenPictureWatch`). Pictures coming again by
-  themselves take the notice away.
+  themselves take the notice away. A decoder that is still producing frames the player drops for
+  arriving too late — a box too busy to keep up, not a stuck decoder — is left to catch up rather
+  than restarted, told apart by its climbing dropped-frame count (`MIN_DROPPED_FRAMES_FOR_LATENESS`).
 - **Sound only** — a channel whose picture this TV cannot decode says *Sound only.* (loudspeaker)
   instead of a silent black screen (`onTracksChanged`, `PlaybackProblem.SOUND_ONLY`).
 - **Paused by another app** — on a TV, *Paused.* (pause sign) with **OK Play**; OK plays the channel

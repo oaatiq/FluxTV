@@ -840,6 +840,11 @@ class FluxPlayerController(
      * neither loop nor be left frozen for good. Pictures that start coming again by themselves take
      * the notice away. A picture that was never coming in steadily, such as a radio station's still
      * image, is left alone.
+     *
+     * So is a decoder that is still handing over frames the renderer then drops for arriving too
+     * late to show ([MIN_DROPPED_FRAMES_FOR_LATENESS]): that is a box with no power to spare, not a
+     * stuck decoder, and restarting it would only cost it its progress and add the load of a fresh
+     * start — the stutter's opposite cure.
      */
     private fun startFrozenPictureWatch() {
         frozenPictureWatch?.cancel()
@@ -848,6 +853,8 @@ class FluxPlayerController(
             var framesSeen = 0
             var lastFrameAtMs = 0L
             var positionAtLastFrame = 0L
+            var droppedAtLastFrame = 0
+            var droppingForLatenessLogged = false
             while (true) {
                 delay(FROZEN_CHECK_MS)
                 val p = bundle?.player ?: return@launch
@@ -869,6 +876,8 @@ class FluxPlayerController(
                     lastFrames = frames
                     lastFrameAtMs = now
                     positionAtLastFrame = p.currentPosition
+                    droppedAtLastFrame = counters.droppedBufferCount
+                    droppingForLatenessLogged = false
                     continue
                 }
                 val frozenFor = now - lastFrameAtMs
@@ -889,6 +898,31 @@ class FluxPlayerController(
                 if (frozenFor < FROZEN_PICTURE_MS || playedOn < FROZEN_PICTURE_MS * 2 / 3 ||
                     framesSeen < MIN_FRAMES_BEFORE_FREEZE
                 ) continue
+                // The decoder is alive, only behind: it is still handing the renderer frames, which
+                // are being dropped for arriving too late to show (droppedBufferCount climbs). That is
+                // a box with no power to spare — a Raspberry Pi 5 decoding in software while something
+                // else, such as a screen share, takes the cores — not a decoder that has stuck, and
+                // the two want opposite care. A restart frees a stuck decoder, but throws away a busy
+                // one's progress and adds the load of building a fresh decoder, making the stutter
+                // worse. A stuck TV decoder emits nothing, so it drops nothing: climbing drops tell
+                // the two apart. Leave it to catch up (the dropped-frame count is in Diagnostics), and
+                // measure the next window afresh so a real freeze after this is still caught.
+                val droppedSince = counters.droppedBufferCount - droppedAtLastFrame
+                if (droppedSince >= MIN_DROPPED_FRAMES_FOR_LATENESS) {
+                    if (!droppingForLatenessLogged) {
+                        droppingForLatenessLogged = true
+                        logEvent(
+                            "decoder",
+                            "${currentChannel?.name}: the picture is behind and frames are being dropped " +
+                                "(this box is busy), not frozen — the decoder is left to catch up"
+                        )
+                    }
+                    setPictureProblem(null, only = PlaybackProblem.FROZEN)
+                    lastFrameAtMs = now
+                    positionAtLastFrame = p.currentPosition
+                    droppedAtLastFrame = counters.droppedBufferCount
+                    continue
+                }
                 if (frozenRestarts < MAX_FROZEN_RESTARTS || frozenFor >= FROZEN_PICTURE_MS + HEAL_ROUND_MS) {
                     restartFrozenPicture()
                     return@launch
@@ -1248,6 +1282,15 @@ class FluxPlayerController(
 
         /** Frames that must have come in steadily before a stop counts as a freeze (2 s at 25 fps). */
         const val MIN_FRAMES_BEFORE_FREEZE = 50
+
+        /**
+         * Frames dropped for lateness within a freeze window that mean the decoder is alive but
+         * behind — a box too busy to keep up — rather than stuck. At or above this, the picture is
+         * left to catch up instead of being restarted; a stuck decoder emits, and so drops, nothing.
+         * Low because a busy decoder drops many frames in a [FROZEN_PICTURE_MS] window while a stuck
+         * one drops essentially none, so the two are far apart.
+         */
+        const val MIN_DROPPED_FRAMES_FOR_LATENESS = 3
 
         /** How long sound may play without a single frame on screen before the view is rebuilt. */
         const val NO_PICTURE_MS = 10_000L

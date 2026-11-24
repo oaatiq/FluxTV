@@ -241,7 +241,7 @@ says why (the table further down), and a few plain words say it for those who re
 | Those tries did not bring it back | The full *Reconnecting…* screen (below) | Tries again every 30 s, for as long as the channel is on screen |
 | The network is gone, while the channel still plays what it buffered | *No network connection*, crossed-out Wi-Fi, top right | Starts the channel again the moment the network is back |
 | The channel keeps stopping to load (3 times in 2 minutes) | *Slow connection*, faint Wi-Fi, top right | Lowers the picture quality by itself; the notice goes after 2 minutes without a stop |
-| The picture freezes while the sound plays on | The dots while the picture restarts; if it keeps freezing, *The picture has stopped.* with a paused TV | Restarts the picture at once 3 times, then every 30 s while it stays stopped |
+| The picture freezes while the sound plays on | The dots while the picture restarts; if it keeps freezing, *The picture has stopped.* with a paused TV | Restarts the picture at once 3 times, then every 30 s while it stays stopped. A busy box that is only falling behind (dropping frames, not frozen) is left to catch up instead of restarted |
 | The TV cannot show this channel's picture | *Sound only.* with a loudspeaker | Nothing can: the sound plays on |
 | Another app took the sound and paused the channel | *Paused.* with the pause sign, and **OK Play** | OK plays it again |
 
