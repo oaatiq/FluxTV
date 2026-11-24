@@ -37,7 +37,9 @@ implementation.
 - **Standby playback** — `MainActivity.onStop` → `FluxPlayerController.onStop` stops playback when
   FluxTV leaves the screen, and `AppViewModel.retuneIfReturning` re-tunes once it is back with a new
   video surface: many TV decoders cannot be moved onto a surface built after a standby (sound
-  without picture), and a live stream needs rejoining by then regardless.
+  without picture), and a live stream needs rejoining by then regardless. On a TV, `onPause` alone
+  (a prompt or a see-through screen over FluxTV, the picture still showing) does not pause the
+  channel (`AppViewModel.onActivityPause`); only `onStop` stops it.
 
 ## 5–6. Senior-friendly Easy Mode & visual accessibility
 - **REQ-SEN-001/002** — full-screen `PlayerSurface`; overlays are transient, not persistent.

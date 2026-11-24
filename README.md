@@ -220,6 +220,12 @@ own, which builds a fresh decoder and rejoins the live edge — a live stream ha
 standby anyway. The same applies on the way back from Settings and from another app. Expect the
 couple of seconds a normal channel change takes, with the channel banner while it loads.
 
+A prompt or another app's see-through screen opened over FluxTV is not leaving the screen: the
+picture still shows, so on a TV the channel plays on under it. Android's "Start recording or
+casting?" when someone asks to see the TV's screen is one, "Allow USB debugging?" another; either
+used to freeze the channel until someone answered it with the remote. On a phone such a screen
+still pauses the channel.
+
 ## When a channel stops
 
 Every problem that keeps a channel from playing normally is shown on screen for as long as it lasts,

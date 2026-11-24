@@ -1113,6 +1113,14 @@ class AppViewModel(
         // The phone's screen is going off and the sound is to play on: no pause on the way, which
         // would be a gap in it. onActivityStop takes it from here.
         if (soundGoesOnWithScreenOff()) return
+        // On a TV, paused is not off screen. A system prompt ("Start recording or casting?",
+        // "Allow USB debugging?") or another app's see-through screen opened over FluxTV pauses the
+        // activity and leaves the picture showing. Paused there, the picture froze and the sound
+        // stopped for as long as that screen stayed up: a moment for the screen-share helper that
+        // opens and closes itself, minutes for a prompt nobody at the TV answered. Live TV plays on
+        // under it. Leaving the screen for real (standby, Home, another app) always goes on to
+        // onActivityStop, which stops the channel as before.
+        if (container.isTelevision) return
         container.playerController.onPause()
     }
 
