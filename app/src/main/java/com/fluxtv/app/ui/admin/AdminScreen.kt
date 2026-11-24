@@ -82,6 +82,7 @@ import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxMuted
 import com.fluxtv.app.ui.theme.FluxOnSurface
 import com.fluxtv.app.ui.theme.FluxSurface
+import com.fluxtv.app.ui.theme.FluxWarning
 import com.fluxtv.app.ui.theme.LocalTouchUi
 import com.fluxtv.app.update.InstallRoute
 import com.fluxtv.app.update.UpdatePhase
@@ -193,7 +194,8 @@ fun AdminScreen(state: UiState, vm: AppViewModel, onExitApp: () -> Unit) {
                 AdminSection.UPDATES -> UpdatesSection(state, vm)
             }
         }
-        if (!touch && section != AdminSection.MENU) {
+        // The two-pane Preferences says what the keys do in its panel, as the menu does.
+        if (!touch && section != AdminSection.MENU && section != AdminSection.PREFERENCES) {
             Spacer(Modifier.height(10.dp))
             TvKeyHint(if (inPlaylists) "Back: Playlists" else "Back: Settings")
         }
@@ -862,14 +864,17 @@ private fun ChannelsSection(state: UiState, vm: AppViewModel) {
 
 @Composable
 private fun PreferencesSection(state: UiState, vm: AppViewModel) {
-    val context = LocalContext.current
+    if (LocalTouchUi.current) TouchPreferences(state, vm) else TvPreferences(state, vm)
+}
+
+/**
+ * Preferences on a phone: one scrolling column, each setting with its explanation under it. Nothing
+ * of what only a TV does (starting when it turns on, its refresh rate) is here.
+ */
+@Composable
+private fun TouchPreferences(state: UiState, vm: AppViewModel) {
     var pin by remember { mutableStateOf("") }
     var userAgent by remember { mutableStateOf(state.settings.userAgent) }
-    val first = remember { FocusRequester() }
-    // On a phone: no remote to place, and nothing of what only a TV does (starting when it turns on,
-    // its refresh rate), which is left out below.
-    val touch = LocalTouchUi.current
-    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -878,11 +883,10 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         FluxToggleRow(
             "Easy Mode shows favorites only",
             state.settings.favoritesOnly,
-            Modifier.formWidth(0.7f),
-            focusRequester = first
+            Modifier.formWidth(0.7f)
         ) { vm.setFavoritesOnly(it) }
 
-        BasicText(if (touch) "Text size" else "Text size on TV", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
+        BasicText("Text size", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         ButtonRow(spacing = 12.dp) {
             FluxChip("Normal", state.settings.textSizePercent == TEXT_SIZE_NORMAL) { vm.setTextSize(TEXT_SIZE_NORMAL) }
             FluxChip("Large", state.settings.textSizePercent == TEXT_SIZE_LARGE) { vm.setTextSize(TEXT_SIZE_LARGE) }
@@ -924,67 +928,16 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
         }
 
         // Phones and tablets only: a TV box stops when its screen goes off, as it always has.
-        if (touch) {
-            FluxToggleRow(
-                "Keep playing with the screen off",
-                state.settings.playWithScreenOff,
-                Modifier.formWidth(0.7f)
-            ) { vm.setPlayWithScreenOff(it) }
-            BasicText(
-                "The channel's sound goes on when the phone's screen turns off, with Stop on the lock " +
-                    "screen. The picture comes back when you return to FluxTV. Uses more battery and data.",
-                style = TextStyle(color = FluxMuted, fontSize = 15.sp)
-            )
-        }
-
-        if (!touch) {
-            FluxToggleRow(
-                "Match TV refresh rate to the video",
-                state.settings.frameRateMatching,
-                Modifier.formWidth(0.7f)
-            ) { vm.setFrameRateMatching(it) }
-
-            FluxToggleRow(
-                "Start FluxTV when the TV turns on",
-                state.settings.startOnBoot,
-                Modifier.formWidth(0.7f)
-            ) { vm.setStartOnBoot(it) }
-
-            // Android 10+ blocks an app from opening itself unless it is exempt, so on those versions
-            // the toggle above needs one permission from the administrator to have any effect.
-            if (state.settings.startOnBoot && !canStartItself(context)) {
-                BasicText(
-                    "This Android version needs one more permission before FluxTV may open itself.\n" +
-                        "Choose FluxTV on the next screen and allow it.",
-                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-                )
-                FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
-            }
-
-            // A force-stopped app is not run again by a wake. Where Shizuku runs on the TV, FluxTV can have
-            // a helper that outlives it; without Shizuku there is nothing to show.
-            val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
-            val shizukuState by shizuku.state.collectAsState()
-            when (shizukuState) {
-                ShizukuWake.State.NOT_RUNNING -> Unit
-                ShizukuWake.State.NEEDS_PERMISSION -> {
-                    BasicText(
-                        "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also start by " +
-                            "itself when the TV wakes after it was force-stopped.",
-                        style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-                    )
-                    FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
-                }
-                ShizukuWake.State.STARTING -> BasicText(
-                    "Starting the Shizuku helper…",
-                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-                )
-                ShizukuWake.State.ACTIVE -> BasicText(
-                    "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
-                    style = TextStyle(color = FluxMuted, fontSize = 18.sp)
-                )
-            }
-        }
+        FluxToggleRow(
+            "Keep playing with the screen off",
+            state.settings.playWithScreenOff,
+            Modifier.formWidth(0.7f)
+        ) { vm.setPlayWithScreenOff(it) }
+        BasicText(
+            "The channel's sound goes on when the phone's screen turns off, with Stop on the lock " +
+                "screen. The picture comes back when you return to FluxTV. Uses more battery and data.",
+            style = TextStyle(color = FluxMuted, fontSize = 15.sp)
+        )
 
         BasicText("Automatic playlist refresh", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         ButtonRow(spacing = 12.dp) {
@@ -1028,6 +981,196 @@ private fun PreferencesSection(state: UiState, vm: AppViewModel) {
             FluxButton("Clear PIN") { vm.setAdminPin(""); pin = "" }
         }
     }
+}
+
+/**
+ * Preferences on a TV, in two panes ([TvSettingsList]): the settings down the left with their state,
+ * and the panel about the one in focus on the right, with its explanation, its options, the field of
+ * a setting that is typed, and what Start with the TV still needs from Android or Shizuku.
+ */
+@Composable
+private fun TvPreferences(state: UiState, vm: AppViewModel) {
+    val context = LocalContext.current
+    val settings = state.settings
+    var userAgent by remember { mutableStateOf(settings.userAgent) }
+    var pin by remember { mutableStateOf("") }
+    // Android 10+ blocks an app from opening itself unless it is exempt, so on those versions Start
+    // with the TV needs one permission from the administrator to have any effect.
+    val needsSelfStart = settings.startOnBoot && !canStartItself(context)
+    // A force-stopped app is not run again by a wake. Where Shizuku runs on the TV, FluxTV can have a
+    // helper that outlives it; without Shizuku there is nothing to show.
+    val shizuku = (context.applicationContext as FluxTvApplication).shizukuWake
+    val shizukuState by shizuku.state.collectAsState()
+
+    val textSizes = listOf(TEXT_SIZE_NORMAL, TEXT_SIZE_LARGE, TEXT_SIZE_EXTRA_LARGE)
+    val qualities = listOf(0, 720, 1080)
+    val refreshHours = listOf(6, 12, 24)
+    val items = listOf(
+        TvSettingItem(
+            key = "favoritesOnly",
+            label = "Favorites only",
+            title = "Easy Mode shows favorites only",
+            description = "TV lists only the channels marked ★ in Channels & favorites. A playlist with no " +
+                "favorites still shows all its channels, rather than none.",
+            kind = TvSettingKind.Toggle(settings.favoritesOnly) { vm.setFavoritesOnly(it) }
+        ),
+        TvSettingItem(
+            key = "textSize",
+            label = "Text size on TV",
+            description = "The size of the letters while watching: the channel list, the banner and the " +
+                "messages. Settings keeps its own size.",
+            kind = TvSettingKind.Choice(
+                listOf("Normal", "Large", "Extra large"),
+                textSizes.indexOf(settings.textSizePercent).coerceAtLeast(0)
+            ) { vm.setTextSize(textSizes[it]) },
+            panel = {
+                Spacer(Modifier.height(12.dp))
+                // A channel row as TV shows it at the size chosen.
+                BasicText(
+                    "12   Channel name, as the channel list shows it",
+                    style = TextStyle(color = FluxOnSurface, fontSize = 22.sp * (settings.textSizePercent / 100f))
+                )
+            }
+        ),
+        TvSettingItem(
+            key = "programmeInList",
+            label = "What is on, in the list",
+            title = "Show what is on in the channel list",
+            description = "The programme on now, in smaller grey letters after each channel name, when the " +
+                "programme guide has it.",
+            kind = TvSettingKind.Toggle(settings.programmeInList) { vm.setProgrammeInList(it) }
+        ),
+        TvSettingItem(
+            key = "evenVolume",
+            label = "Even volume",
+            title = "Even out the volume between channels",
+            description = "Quiet channels are brought up and loud ones down, so changing channel does not " +
+                "need the volume button.",
+            kind = TvSettingKind.Toggle(settings.evenVolume) { vm.setEvenVolume(it) }
+        ),
+        TvSettingItem(
+            key = "maxQuality",
+            label = "Maximum quality",
+            description = "The best picture TV takes from a channel that offers several. Auto: the best " +
+                "the TV and the connection allow. A lower one uses less data, for a slow connection.",
+            kind = TvSettingKind.Choice(
+                listOf("Auto", "Up to 720p", "Up to 1080p"),
+                qualities.indexOf(settings.maxVideoHeight).coerceAtLeast(0)
+            ) { vm.setMaxVideoHeight(qualities[it]) }
+        ),
+        TvSettingItem(
+            key = "frameRate",
+            label = "Match refresh rate",
+            title = "Match TV refresh rate to the video",
+            description = "The TV switches to the refresh rate that suits the channel's frame rate, for " +
+                "smooth movement, where it has one at the same resolution. Off: the TV goes back to its " +
+                "own mode at once.",
+            kind = TvSettingKind.Toggle(settings.frameRateMatching) { vm.setFrameRateMatching(it) }
+        ),
+        TvSettingItem(
+            key = "startOnBoot",
+            label = "Start with the TV",
+            title = "Start FluxTV when the TV turns on",
+            description = "FluxTV opens by itself on the last channel when the TV turns on or wakes, with " +
+                "nothing to press.",
+            kind = TvSettingKind.Toggle(settings.startOnBoot) { vm.setStartOnBoot(it) },
+            note = if (needsSelfStart) "Needs one more permission" else null,
+            interactive = needsSelfStart || shizukuState == ShizukuWake.State.NEEDS_PERMISSION,
+            enterHint = "allow",
+            panel = { controls ->
+                val muted = TextStyle(color = FluxMuted, fontSize = 18.sp, lineHeight = 25.sp)
+                var focusTaken = false
+                // The first button takes the focus that ▶ moves to.
+                fun firstButton(): FocusRequester? = if (focusTaken) null else controls.focusRequester.also { focusTaken = true }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (needsSelfStart) {
+                        BasicText(
+                            "This Android version needs one more permission before FluxTV may open itself. " +
+                                "Choose FluxTV on the next screen and allow it.",
+                            style = TextStyle(color = FluxWarning, fontSize = 18.sp, lineHeight = 25.sp)
+                        )
+                        FluxButton("Allow FluxTV to open itself", focusRequester = firstButton()) {
+                            openSelfStartPermission(context)
+                        }
+                    }
+                    when (shizukuState) {
+                        ShizukuWake.State.NOT_RUNNING -> Unit
+                        ShizukuWake.State.NEEDS_PERMISSION -> {
+                            BasicText(
+                                "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also " +
+                                    "start by itself when the TV wakes after it was force-stopped.",
+                                style = muted
+                            )
+                            FluxButton("Allow FluxTV to use Shizuku", focusRequester = firstButton()) {
+                                shizuku.requestPermission()
+                            }
+                        }
+                        ShizukuWake.State.STARTING -> BasicText("Starting the Shizuku helper…", style = muted)
+                        ShizukuWake.State.ACTIVE -> BasicText(
+                            "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
+                            style = muted
+                        )
+                    }
+                }
+            }
+        ),
+        TvSettingItem(
+            key = "refresh",
+            label = "Playlist refresh",
+            title = "Automatic playlist refresh",
+            description = "How often the playlist in use is downloaded again, for the channels the provider " +
+                "adds or moves. Channel numbers and favorites stay as they are.",
+            kind = TvSettingKind.Choice(
+                listOf("Every 6 hours", "Every 12 hours", "Every 24 hours"),
+                refreshHours.indexOf(settings.refreshIntervalHours).coerceAtLeast(0)
+            ) { vm.setRefreshHours(refreshHours[it]) }
+        ),
+        TvSettingItem(
+            key = "userAgent",
+            label = "Player name",
+            description = "The name FluxTV gives the provider. Some only serve players they know: enter " +
+                "the one they give, for example VLC/3.0.20. Empty: $DEFAULT_USER_AGENT.",
+            kind = TvSettingKind.Edit(settings.userAgent.ifBlank { "FluxTV's own" }),
+            panel = { controls ->
+                FluxTextField(
+                    label = "User-Agent",
+                    value = userAgent,
+                    onValueChange = { userAgent = it.take(200) },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = DEFAULT_USER_AGENT,
+                    focusRequester = controls.focusRequester
+                )
+                Spacer(Modifier.height(16.dp))
+                ButtonRow {
+                    FluxButton("Save") { vm.setUserAgent(userAgent); controls.done() }
+                    FluxButton("Use FluxTV's own") { userAgent = ""; vm.setUserAgent(""); controls.done() }
+                }
+            }
+        ),
+        TvSettingItem(
+            key = "pin",
+            label = "Settings PIN",
+            description = "Asked before Settings opens, so that only whoever knows it can change the " +
+                "playlists and preferences. Digits only, up to 8. Optional.",
+            kind = TvSettingKind.Edit(if (settings.adminPin.isBlank()) "None" else "Set"),
+            panel = { controls ->
+                FluxTextField(
+                    label = "New PIN (digits)",
+                    value = pin,
+                    onValueChange = { pin = it.filter { c -> c.isDigit() }.take(8) },
+                    modifier = Modifier.fillMaxWidth(0.6f),
+                    focusRequester = controls.focusRequester,
+                    keyboardType = KeyboardType.NumberPassword
+                )
+                Spacer(Modifier.height(16.dp))
+                ButtonRow {
+                    FluxButton("Save PIN") { vm.setAdminPin(pin); pin = ""; controls.done() }
+                    FluxButton("Clear PIN") { vm.setAdminPin(""); pin = ""; controls.done() }
+                }
+            }
+        )
+    )
+    TvSettingsList("Preferences", items)
 }
 
 @Composable

@@ -12,8 +12,9 @@ implementation.
 - **REQ-GEN-003** — admin is a separate `AppMode.ADMIN` reached only by a deliberate step (⚙ at the
   left of the channel list, hold OK, MENU);
   `ui/admin/AdminScreen.kt`. On a TV, `ui/admin/TvSettingsLayout.kt` lays it out for the 16:9 screen
-  and the remote: a one-column menu with a panel about the line in focus beside it, and on every
-  other screen where it is (*Settings ›*) and what Back does.
+  and the remote: a one-column menu with a panel about the line in focus beside it, Preferences as
+  a list of settings with the same panel (`TvSettingsList`), and on every other screen where it is
+  (*Settings ›*) and what Back does.
 - **REQ-GEN-004** — no home page; `FluxApp` boots straight into `STARTING → EASY`.
 - **REQ-GEN-005** — all operation via remote; `MainActivity.handleRemoteKey`.
 

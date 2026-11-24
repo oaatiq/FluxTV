@@ -227,16 +227,27 @@ fun FluxToggleRow(
     }
 }
 
-/** The switch of a [FluxToggleRow] on a phone: filled, its knob to the right, when on. */
+/**
+ * The switch of a [FluxToggleRow] on a phone, and of a setting in a TV list: filled, its knob to the
+ * right, when on. [onAccent]: drawn on the accent fill of a focused line, where an accent switch would
+ * vanish, so in the dark of the text there instead.
+ */
 @Composable
-private fun SwitchMark(checked: Boolean) {
+internal fun SwitchMark(checked: Boolean, onAccent: Boolean = false) {
     val track = RoundedCornerShape(50)
+    val fill = if (onAccent) OnAccent else FluxAccent
     Box(
         modifier = Modifier
             .size(width = 52.dp, height = 30.dp)
             .clip(track)
-            .background(if (checked) FluxAccent else FluxSurfaceVariant)
-            .border(2.dp, if (checked) FluxAccent else FluxMuted, track)
+            .background(
+                when {
+                    checked -> fill
+                    onAccent -> Color.Transparent
+                    else -> FluxSurfaceVariant
+                }
+            )
+            .border(2.dp, if (checked || onAccent) fill else FluxMuted, track)
             .padding(4.dp),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
     ) {
@@ -244,7 +255,14 @@ private fun SwitchMark(checked: Boolean) {
             Modifier
                 .size(if (checked) 22.dp else 18.dp)
                 .clip(CircleShape)
-                .background(if (checked) OnAccent else FluxMuted)
+                .background(
+                    when {
+                        onAccent && checked -> FluxFocus
+                        onAccent -> OnAccent
+                        checked -> OnAccent
+                        else -> FluxMuted
+                    }
+                )
         )
     }
 }

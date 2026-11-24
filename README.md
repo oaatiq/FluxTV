@@ -436,7 +436,15 @@ favorites, the preferences, the last channel's decoding, the version and whether
 **▲ ▼** move through the menu, one line at a time; **OK** or **▶** opens a section; **Back** returns to
 TV. Each section says where it is above its title (*Settings ›*, or *Settings › Playlists ›*) and what
 Back does at its foot, and Back returns to the menu with the section just left in focus. The time is
-at the top right, as in the channel list. Sections:
+at the top right, as in the channel list.
+
+**Preferences** on a TV is laid out the same way: the settings down the left, each with its state
+(On / Off and a switch, the option chosen, or the value), and on the right a panel about the one the
+remote is on — what it does, its options, and the field of a setting that is typed. **OK** switches a
+setting on or off; **◀ ▶** (or OK) step through the options of a choice; **OK** or **▶** on *Player
+name* or *Settings PIN* goes into the panel to type it, and **◀** or **Back** comes back to the list. A
+permission that *Start with the TV* still needs is said under its name, and its button is in the
+panel (**▶**). Sections:
 
 - **Playlists** — add playlists (from a phone, or typed), see the saved ones with the one in use
   marked **IN USE**, and open one to **Use this playlist**, refresh it, rename it, change its link,
