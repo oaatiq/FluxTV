@@ -394,7 +394,10 @@ implementation.
 - **REQ-FPS-001/002** — `FrameRateController` + ExoPlayer AFR (`VIDEO_CHANGE_FRAME_RATE_STRATEGY_*`).
 - **REQ-FPS-003/004** — only switches on fps change at equal resolution; mode de-dup; only once the
   new frame rate has held for 3 s, so zapping does not switch the TV's mode at every step. Turned
-  off, the TV goes back to its own mode at once; turned on, the channel playing is matched.
+  off, the TV goes back to its own mode at once; turned on, the channel playing is matched. A mode
+  matches when it is within 0.5% of 1–4× the frame rate (`RefreshRateMatch`); of equally good ones
+  the mode in use is kept, else the one nearest the TV's own rate is taken (50 Hz, not 25 Hz, for
+  25 fps on a 60 Hz TV).
 - **REQ-FPS-005** — all guarded; if unavailable, playback continues unchanged.
 
 ## 15–17. Network, reliability, recovery
