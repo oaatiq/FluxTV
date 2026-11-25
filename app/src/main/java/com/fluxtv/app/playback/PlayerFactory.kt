@@ -43,6 +43,9 @@ object PlayerFactory {
     /** At or below this Java heap per app (ActivityManager.memoryClass), the buffer is capped by size. */
     private const val LOW_MEMORY_HEAP_MB = 192
 
+    /** How much a channel buffers again after a stall before it goes on (see the load control below). */
+    const val BUFFER_AFTER_STALL_MS = 5_000
+
     data class Bundle(
         val player: ExoPlayer,
         val httpDataSourceFactory: OkHttpDataSource.Factory,
@@ -70,7 +73,7 @@ object PlayerFactory {
                 // (plain MPEG-TS) took up to a second longer to start. After a stall it waits for 5 s,
                 // so a weak connection does not stall again straight away.
                 /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 5_000
+                /* bufferForPlaybackAfterRebufferMs = */ BUFFER_AFTER_STALL_MS
             )
             .apply {
                 val heapMb = context.getSystemService(ActivityManager::class.java)?.memoryClass ?: 0

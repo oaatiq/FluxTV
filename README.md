@@ -236,7 +236,7 @@ says why (the table further down), and a few plain words say it for those who re
 
 | What happens | What the screen shows | What FluxTV does |
 |---|---|---|
-| A channel takes more than 1.5 s to start, or stops to load for more than 1.5 s | The moving dots, in the middle | Waits; starts it again after 15 s (start) or 8 s (stall) |
+| A channel takes more than 1.5 s to start, or stops to load for more than 1.5 s | The moving dots, in the middle | Waits; starts it again after 15 s (start) or 8 s (stall). A stall that is filling up again by then is waited out, for up to 30 s |
 | FluxTV is trying the channel again | Icon + dots + *Connection interrupted. Trying again…* (or *No network connection.*, *Channel temporarily unavailable.*) | Tries again, with growing pauses, about 45 s in all |
 | Those tries did not bring it back | The full *Reconnecting…* screen (below) | Tries again every 30 s, for as long as the channel is on screen |
 | The network is gone, while the channel still plays what it buffered | *No network connection*, crossed-out Wi-Fi, top right | Starts the channel again the moment the network is back |

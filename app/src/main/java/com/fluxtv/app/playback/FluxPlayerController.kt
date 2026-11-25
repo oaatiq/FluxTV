@@ -756,20 +756,41 @@ class FluxPlayerController(
      * the player reporting that it started buffering: Media3 reports no change when a channel is
      * loaded while the player is already buffering (zapping on before the last channel started, or
      * this watchdog's own retry), which left a channel that never started with no recovery at all.
+     *
+     * A stall of playback that had begun, and that is filling up again when its time runs out, is
+     * waited out instead, a window at a time and for [STALL_MAX_WAIT_MS] at most: the data is coming
+     * in, only not yet the [PlayerFactory.BUFFER_AFTER_STALL_MS] it goes on with. A channel the
+     * server sends at the live rate fills no faster than it plays, so a dropout of a few seconds
+     * outlasted the timeout while it refilled, and the reconnect threw that refill away and started
+     * over with a thinner buffer than the one it had nearly rebuilt, which the next dropout emptied
+     * again: one stall after another. A stall that stopped filling, or that has that much in and
+     * still does not play, is not a matter of waiting, and is reconnected as before.
      */
     private fun startBufferingWatchdog(timeoutMs: Long = STALL_TIMEOUT_MS) {
         bufferingWatchdog?.cancel()
+        // A start (or a restart) has no playback to resume yet, and keeps its one deadline.
+        val waitOutRefill = timeoutMs == STALL_TIMEOUT_MS
         bufferingWatchdog = scope.launch {
-            delay(timeoutMs)
-            val p = bundle?.player ?: return@launch
-            // Off screen nobody is watching; onResume() arms it again if the stall is still there.
-            if (p.playbackState == Player.STATE_BUFFERING && onScreen) {
+            var bufferedMs = bundle?.player?.totalBufferedDuration ?: 0L
+            var waitedMs = 0L
+            while (true) {
+                delay(timeoutMs)
+                waitedMs += timeoutMs
+                val p = bundle?.player ?: return@launch
+                // Off screen nobody is watching; onResume() arms it again if the stall is still there.
+                if (p.playbackState != Player.STATE_BUFFERING || !onScreen) return@launch
+                val nowBufferedMs = p.totalBufferedDuration
+                val refilling = nowBufferedMs - bufferedMs >= STALL_REFILL_MIN_MS &&
+                    nowBufferedMs < PlayerFactory.BUFFER_AFTER_STALL_MS
+                bufferedMs = nowBufferedMs
+                if (waitOutRefill && refilling && waitedMs < STALL_MAX_WAIT_MS) continue
                 if (stallStartedMs > 0L) {
                     stallStartedMs = 0L
                     noteStall()
                 }
                 logEvent("buffering", "Prolonged buffering on ${currentChannel?.name}")
                 scheduleRetry(ErrorMapper.CONNECTION_INTERRUPTED, "prolonged buffering", PlaybackProblem.CONNECTION)
+                return@launch
             }
         }
     }
@@ -1289,6 +1310,13 @@ class FluxPlayerController(
 
         /** How long playback that had started may stay buffering before it is prepared again (REQ-BUF-003). */
         const val STALL_TIMEOUT_MS = 8_000L
+
+        /**
+         * A stall whose buffer grew by this much over its last [STALL_TIMEOUT_MS] is filling up again,
+         * and is given another window rather than reconnected; up to [STALL_MAX_WAIT_MS] in all.
+         */
+        const val STALL_REFILL_MIN_MS = 500L
+        const val STALL_MAX_WAIT_MS = 30_000L
 
         /** The pause before the one retry a decoder error gets, for the decoder to be let go. */
         const val DECODER_RETRY_DELAY_MS = 1_500L

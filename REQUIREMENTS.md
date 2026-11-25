@@ -382,7 +382,8 @@ implementation.
   apps get 192 MB of heap or less, the buffer is capped at a quarter of it instead.
 - **REQ-BUF-003** — short buffering shows no message: under 1.5 s nothing at all, then only the
   moving dots, without words; only a watchdog escalates: 8 s for a stall, 15 s for a channel still
-  starting, armed by every prepare.
+  starting, armed by every prepare. A stall whose buffer is filling up again gets further 8 s
+  windows, up to 30 s, rather than a reconnect that would throw the refill away.
 - **REQ-BUF-005/006/007** — automatic recovery, no Retry needed, bounded by `RecoveryPolicy`.
 - **REQ-BUF-008** — prolonged buffering → "Connection interrupted. Trying again…", with the faint
   Wi-Fi icon.
