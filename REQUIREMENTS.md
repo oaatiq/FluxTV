@@ -372,7 +372,9 @@ implementation.
 - **REQ-PLAY-003/REQ-REL-004** — `setEnableDecoderFallback(true)`; one bad channel/track doesn't
   break the next. Sound formats the TV cannot decode (AC-3, E-AC-3, MP2, DTS) go to Media3's FFmpeg
   extension; formats the TV decodes or passes through still go to the TV first.
-- **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes.
+- **REQ-PLAY-005** — large buffer + ABR minimise stutter/freezes. Live channels play at exactly
+  1×: every media item's `LiveConfiguration` pins the speed, so Media3 never stretches the sound or
+  shifts the frame cadence to hold a live offset (`FluxPlayerController.STEADY_LIVE_SPEED`).
 - **REQ-PLAY-006 / REQ-BUF-004** — phases distinguish loading / transient / prolonged / failure in
   `FluxPlayerController`, each with its own visual (see *Visual feedback for streaming problems*).
 - **REQ-BUF-001/002** — `DefaultLoadControl` 30–60s buffer, `prioritizeTimeOverSizeThresholds`; where

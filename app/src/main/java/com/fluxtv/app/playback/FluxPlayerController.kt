@@ -566,8 +566,11 @@ class FluxPlayerController(
             setDefaultRequestProperties(request.headers)
         }
         p.setMediaItem(
-            if (loadAsHls) MediaItem.Builder().setUri(request.address).setMimeType(MimeTypes.APPLICATION_M3U8).build()
-            else MediaItem.fromUri(request.address)
+            MediaItem.Builder()
+                .setUri(request.address)
+                .apply { if (loadAsHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                .setLiveConfiguration(STEADY_LIVE_SPEED)
+                .build()
         )
         p.prepare()
         // A retry while FluxTV is off screen reconnects, and only plays once FluxTV is back. One
@@ -1257,6 +1260,20 @@ class FluxPlayerController(
     }
 
     private companion object {
+        /**
+         * Live channels play at their own pace, never faster or slower. Left to itself, Media3 keeps
+         * a live DASH channel (and an HLS one whose playlist sets a hold-back) at a set distance
+         * behind live by playing it up to 3% fast or slow, retuned every second. The sound was
+         * stretched to match, which wavers audibly, and each retune drained and restarted the sound
+         * path, a small break in it each time, which also set the volume levelling off at its
+         * fast pace again. The picture's frames came at 3% off the rate the TV had been switched to
+         * for them, so some were shown twice or not at all: a regular stutter. A channel that falls
+         * too far behind live is brought back to it by [rejoinLive] instead. The media item's
+         * setting wins over anything a manifest asks for.
+         */
+        val STEADY_LIVE_SPEED: MediaItem.LiveConfiguration =
+            MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(1f).setMaxPlaybackSpeed(1f).build()
+
         /** Uninterrupted playback after which the retry budget is restored. */
         const val STABLE_PLAYBACK_MS = 20_000L
 
