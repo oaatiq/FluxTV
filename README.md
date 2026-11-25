@@ -414,8 +414,10 @@ Channels are broadcast at very different loudness, so without help the Viewer tu
 one channel and down on the next. **Settings → Preferences → Even out the volume between channels**
 (on by default) brings quiet channels up by as much as 10 dB and loud ones down by as much as 12 dB.
 It follows each channel's level over a few seconds, so the sound inside a programme keeps its shape;
-after a channel change it adapts faster for a few seconds. Silence is not turned up, and a limiter
-keeps the result under full scale. Switching it off or on takes effect at once.
+after a channel change it adapts faster for a few seconds, starting no louder than the new channel
+itself (a quiet channel's boost is not carried onto the next one). Silence is not turned up, and a
+limiter keeps the result under full scale; it looks 10 ms ahead, so it turns a loud moment down
+smoothly instead of with a click. Switching it off or on takes effect at once.
 
 It works on the sound FluxTV decodes (on the TV's own decoders or FFmpeg). Sound the TV passes
 through undecoded to an amplifier or soundbar (AC-3 over HDMI, say) cannot be levelled.

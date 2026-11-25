@@ -198,8 +198,9 @@ implementation.
 - **Even volume** — Settings → Preferences → *Even out the volume between channels*
   (`FluxSettings.evenVolume`, on by default): `playback/LoudnessLeveler.kt` in the audio sink through
   `EvenVolumeAudioProcessor` (`PlayerFactory.buildAudioSink`). Weighted level followed over ~5 s
-  (0.6 s for 3 s after a channel change), gain −12…+10 dB toward −20 dBFS, silence gated, peaks
-  limited under −1 dBFS; switching takes effect at once. Diagnostics shows its gain.
+  (0.6 s for 3 s after a channel change, starting from at most 0 dB), gain −12…+10 dB toward
+  −20 dBFS, silence gated, peaks limited under −1 dBFS by a limiter with 10 ms of look-ahead (gain
+  ramped across each block, never stepped); switching takes effect at once. Diagnostics shows its gain.
 - **Acceptance tests** — README → Acceptance testing → *Banner, guide and clock*, *Text size*,
   *Even volume*.
 
