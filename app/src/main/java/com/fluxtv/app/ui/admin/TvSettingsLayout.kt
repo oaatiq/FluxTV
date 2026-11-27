@@ -65,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.AppName
 import com.fluxtv.app.ui.components.InfoRow
 import com.fluxtv.app.ui.components.SectionTitle
 import com.fluxtv.app.ui.components.SwitchMark
@@ -128,7 +129,7 @@ internal fun TvSettingsHome(
 
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            SectionTitle("FluxTV Settings", Modifier.weight(1f))
+            SectionTitle("${AppName} Settings", Modifier.weight(1f))
             Spacer(Modifier.width(16.dp))
             ClockText()
         }

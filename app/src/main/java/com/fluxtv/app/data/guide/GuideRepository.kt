@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Process
 import android.util.AtomicFile
 import android.util.Xml
+import com.fluxtv.app.AppName
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.util.localFile
 import kotlinx.coroutines.Dispatchers
@@ -259,7 +260,7 @@ class GuideRepository(
     private fun httpProblem(code: Int): String = when (code) {
         401, 403 -> "The provider refused the programme guide link. Check the user name and password in it."
         404, 410 -> "The provider has no programme guide at this link."
-        else -> "The provider's server did not send the programme guide (error $code). FluxTV tries again later."
+        else -> "The provider's server did not send the programme guide (error $code). ${AppName} tries again later."
     }
 
     private class GuideHttpException(val code: Int) : Exception("HTTP $code")

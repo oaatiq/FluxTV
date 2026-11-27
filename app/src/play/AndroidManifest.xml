@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Google Play edition, MotionTV (the `play` build type in app/build.gradle.kts): what it leaves
+    out of the main manifest, for Google Play's policies (play/README.md).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Google Play updates the app. Its policy lets an app from Google Play be updated no other way,
+        and allows this permission only to apps whose core purpose is installing apps.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" tools:node="remove" />
+
+    <!--
+        No service waiting for the TV to wake: Google Play accepts a "special use" foreground service
+        only case by case, for user-initiated tasks that last only as long as needed. Starting with
+        the TV still works at a boot, and at a wake while the process is alive (StandbyWatcher).
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" tools:node="remove" />
+
+    <!-- No Shizuku helper (BuildConfig.SHIZUKU is false): nothing of Shizuku's library is left either. -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" tools:node="remove" />
+
+    <application>
+        <service android:name="com.fluxtv.app.WakeListenerService" tools:node="remove" />
+        <provider android:name="rikka.shizuku.ShizukuProvider" tools:node="remove" />
+        <meta-data android:name="moe.shizuku.client.V3_SUPPORT" tools:node="remove" />
+    </application>
+</manifest>

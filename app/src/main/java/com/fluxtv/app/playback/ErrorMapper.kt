@@ -3,6 +3,7 @@ package com.fluxtv.app.playback
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.HttpDataSource
+import com.fluxtv.app.AppName
 
 enum class ErrorKind { NETWORK, SOURCE, DECODER, DRM, NO_NETWORK, UNKNOWN }
 
@@ -23,7 +24,7 @@ enum class PlaybackProblem(val title: String, val hint: String, val healing: Boo
     ),
     CONNECTION(
         "The connection to this channel keeps failing.",
-        "The provider's server is not answering, or the connection is too slow. FluxTV keeps trying."
+        "The provider's server is not answering, or the connection is too slow. ${AppName} keeps trying."
     ),
     REFUSED(
         "The provider refused this channel.",
@@ -35,7 +36,7 @@ enum class PlaybackProblem(val title: String, val hint: String, val healing: Boo
     ),
     UNAVAILABLE(
         "This channel is temporarily unavailable.",
-        "The provider is not sending it right now. FluxTV keeps trying."
+        "The provider is not sending it right now. ${AppName} keeps trying."
     ),
     CANNOT_PLAY(
         "This TV can't play this channel.",
@@ -44,11 +45,11 @@ enum class PlaybackProblem(val title: String, val hint: String, val healing: Boo
     ),
     DECODER(
         "This TV could not play this channel.",
-        "Its decoder may only be busy for now. FluxTV keeps trying."
+        "Its decoder may only be busy for now. ${AppName} keeps trying."
     ),
     FROZEN(
         "The picture has stopped.",
-        "The sound plays on. FluxTV restarts the picture by itself."
+        "The sound plays on. ${AppName} restarts the picture by itself."
     ),
     SOUND_ONLY(
         "Sound only.",

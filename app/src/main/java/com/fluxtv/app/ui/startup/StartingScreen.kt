@@ -22,6 +22,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.AppName
 import com.fluxtv.app.ui.easymode.ConnectionBadge
 import com.fluxtv.app.ui.easymode.ConnectionNotice
 import com.fluxtv.app.ui.theme.FluxAccent
@@ -47,7 +48,7 @@ fun StartingScreen(message: String, networkLost: Boolean = false) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            BasicText("FluxTV", style = TextStyle(color = FluxAccent, fontSize = 56.sp, fontWeight = FontWeight.Bold))
+            BasicText(AppName, style = TextStyle(color = FluxAccent, fontSize = 56.sp, fontWeight = FontWeight.Bold))
             Spacer(Modifier.height(24.dp))
             BasicText(
                 message,

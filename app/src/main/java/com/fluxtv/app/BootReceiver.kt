@@ -54,13 +54,13 @@ class BootReceiver : BroadcastReceiver() {
                     settings?.startOnBoot == false -> "$signal: start on boot is off"
                     firstSignal -> {
                         launchFluxTv(context, fromBoot = true)
-                        "$signal: starting FluxTV ${BootTrace.timings(enteredMs, settingReadMs)}"
+                        "$signal: starting ${AppName} ${BootTrace.timings(enteredMs, settingReadMs)}"
                     }
                     !isFluxTvOnScreen() -> {
                         launchFluxTv(context, fromBoot = false)
-                        "$signal: bringing FluxTV to the front"
+                        "$signal: bringing ${AppName} to the front"
                     }
-                    else -> "$signal: FluxTV is already on screen"
+                    else -> "$signal: ${AppName} is already on screen"
                 }
                 container.diagnosticsStore.append(BootTrace.event(message))
                 // The process may be let go once the receiver finishes, so the line is written first.

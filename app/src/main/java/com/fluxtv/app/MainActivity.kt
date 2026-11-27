@@ -196,11 +196,11 @@ class MainActivity : ComponentActivity() {
         val event = when {
             intent?.getBooleanExtra(WakeDaemon.EXTRA_STARTED_BY_HELPER, false) == true -> DiagnosticsEvent(
                 System.currentTimeMillis(), null, "wake",
-                "The TV woke while FluxTV was not running: the Shizuku helper started it"
+                "The TV woke while ${AppName} was not running: the Shizuku helper started it"
             )
             intent?.getBooleanExtra(WakeDaemon.EXTRA_RELAUNCHED_AFTER_UPDATE, false) == true -> DiagnosticsEvent(
                 System.currentTimeMillis(), null, "update",
-                "The Shizuku helper started FluxTV again on the new version"
+                "The Shizuku helper started ${AppName} again on the new version"
             )
             else -> return
         }
@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity() {
         if (BootTrace.awaitingOnScreen) {
             BootTrace.awaitingOnScreen = false
             val store = (application as FluxTvApplication).container.diagnosticsStore
-            val event = BootTrace.event("FluxTV on screen")
+            val event = BootTrace.event("${AppName} on screen")
             lifecycleScope.launch(Dispatchers.IO) { store.append(event) }
         }
     }

@@ -43,13 +43,16 @@ class FluxTvApplication : Application() {
         standbyWatcher = StandbyWatcher(this, container).also { if (television) it.register() }
         // Android 14+ holds that broadcast back from an app it has frozen in the background; a small
         // foreground service, while "Start FluxTV when the TV turns on" is on, keeps FluxTV hearing it.
-        if (television) WakeListenerService.install(this, container, appScope)
+        // Not in the Google Play edition, whose manifest has no such service (app/build.gradle.kts).
+        if (television && BuildConfig.WAKE_SERVICE) WakeListenerService.install(this, container, appScope)
         // With Shizuku on the TV, a helper that outlives a force-stop of FluxTV starts it on a wake.
-        shizukuWake = ShizukuWake(this, container).also { if (television) it.register() }
+        // Not in the Google Play edition either: it stays NOT_RUNNING there, which shows nothing.
+        shizukuWake = ShizukuWake(this, container).also { if (television && BuildConfig.SHIZUKU) it.register() }
         // The same helper installs FluxTV's updates without a question, on a TV that has it.
-        if (television) container.updateManager.helper = shizukuWake
+        if (television && BuildConfig.SHIZUKU) container.updateManager.helper = shizukuWake
         // Unattended updates: a look every 6 hours, downloads and installations at quiet moments.
-        appScope.launch { UpdateWorker.schedule(this@FluxTvApplication) }
+        // Google Play updates its edition itself, and its policy allows no other way.
+        if (BuildConfig.SELF_UPDATE) appScope.launch { UpdateWorker.schedule(this@FluxTvApplication) }
         // Periodic, unattended playlist refresh (REQ-PL-004), at the interval chosen in Preferences.
         // Scheduling it with the 12 h default here, on every start, overwrote that choice.
         appScope.launch {

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fluxtv.app.AppName
 import com.fluxtv.app.playback.PlaybackProblem
 import com.fluxtv.app.ui.AppViewModel
 import com.fluxtv.app.ui.EasyOverlay
@@ -149,7 +150,7 @@ private fun NoChannelsHint(loading: Boolean, failed: Boolean) {
         loading -> "Loading channels…" to
             "The first time can take a few minutes. TV starts on its own when they arrive."
         failed -> "Can't load the channels" to
-            "FluxTV keeps trying, and TV starts on its own when they arrive.\n" +
+            "${AppName} keeps trying, and TV starts on its own when they arrive.\n" +
             "If this lasts, check the internet connection and the playlist in Settings."
         else -> "No channels yet" to "Open Settings to add your playlist."
     }

@@ -1,0 +1,16 @@
+#EXTM3U
+# MotionTV demo playlist: openly licensed films and public test streams, for trying MotionTV and for
+# Google Play's review (play/README.md). It is what "Use sample test playlist" fills in, in the
+# Google Play edition. Big Buck Bunny and Tears of Steel are (c) Blender Foundation, CC BY 3.0
+# (peach.blender.org, mango.blender.org). The live streams are test signals that Unified Streaming
+# and the DASH Industry Forum publish for testing players.
+#EXTINF:-1 group-title="Live test streams",Live demo (HLS)
+https://demo.unified-streaming.com/k8s/live/stable/live.isml/.m3u8
+#EXTINF:-1 group-title="Live test streams",Live test pattern (DASH)
+https://livesim2.dashif.org/livesim2/testpic_2s/Manifest.mpd
+#EXTINF:-1 group-title="Open movies",Big Buck Bunny
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Open movies",Tears of Steel
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 group-title="Open movies",Big Buck Bunny (DASH)
+https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd

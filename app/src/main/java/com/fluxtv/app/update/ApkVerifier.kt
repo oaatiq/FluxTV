@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
+import com.fluxtv.app.AppName
 import java.io.File
 import java.security.MessageDigest
 
@@ -34,18 +35,18 @@ object ApkVerifier {
         val pm = context.packageManager
         val archive = archiveInfo(pm, apk) ?: return "The downloaded file is not an Android app"
         if (archive.packageName != context.packageName) {
-            return "The downloaded app is not FluxTV (${archive.packageName})"
+            return "The downloaded app is not ${AppName} (${archive.packageName})"
         }
         val code = PackageInfoCompat.getLongVersionCode(archive)
         if (code != info.versionCode) return "The downloaded app is build $code, not build ${info.versionCode} as announced"
-        val installed = installedInfo(context) ?: return "FluxTV could not read its own version"
-        if (code <= PackageInfoCompat.getLongVersionCode(installed)) return "The downloaded app is not newer than this FluxTV"
+        val installed = installedInfo(context) ?: return "${AppName} could not read its own version"
+        if (code <= PackageInfoCompat.getLongVersionCode(installed)) return "The downloaded app is not newer than this ${AppName}"
 
         val ours = currentSigners(installed)
         val theirs = allSigners(archive)
         // An Android that cannot read the archive's signers leaves the check to the installation.
         if (ours.isNotEmpty() && theirs.isNotEmpty() && !theirs.containsAll(ours)) {
-            return "The downloaded app is not signed with this FluxTV's key"
+            return "The downloaded app is not signed with this ${AppName}'s key"
         }
         return null
     }

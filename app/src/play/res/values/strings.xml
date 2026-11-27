@@ -1,0 +1,5 @@
+<resources>
+    <!-- The Google Play edition's name (AppName in the code); see app/build.gradle.kts. -->
+    <string name="app_name">MotionTV</string>
+    <string name="admin_title">MotionTV Settings</string>
+</resources>

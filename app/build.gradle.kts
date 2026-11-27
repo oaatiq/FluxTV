@@ -47,6 +47,28 @@ val fluxUpdateUrl: String = setting("fluxtv.updateUrl", "FLUXTV_UPDATE_URL")
  */
 val releaseKeystore: String? = setting("fluxtv.keystore", "FLUXTV_KEYSTORE")
 
+/**
+ * The Google Play edition: the `play` build type, `./gradlew :app:bundlePlay` (play/README.md).
+ *
+ * Google Play already lists another company's "FluxTV" under com.fluxtv.app, so this edition has a
+ * name and package of its own, MotionTV, and installs beside a FluxTV rather than over it; the FluxTV
+ * that TVs already run (GitHub releases) is not touched by it. It is FluxTV without what an app from
+ * Google Play may not do or would have to justify to Google: updating itself (Google Play updates it),
+ * the Shizuku helper, and the foreground service that listens for the TV to wake (special use). Its
+ * sample playlist is a short list of openly licensed test streams. It targets the API level Google
+ * Play requires of phone apps; the other builds keep `targetSdk` below.
+ */
+val playApplicationId = "io.github.oaatiq.motiontv"
+val playAppName = "MotionTV"
+val playTargetSdk = 36
+val playSamplePlaylist = "https://raw.githubusercontent.com/oaatiq/FluxTV/main/play/demo-playlist.m3u"
+
+/**
+ * The key the Google Play edition is signed with for uploading to Google Play (its upload key; Google
+ * signs what it delivers with a key of its own). Without one set, it is the release key above.
+ */
+val uploadKeystore: String? = setting("fluxtv.uploadKeystore", "FLUXTV_UPLOAD_KEYSTORE")
+
 android {
     namespace = "com.fluxtv.app"
     compileSdk = 35
@@ -62,6 +84,13 @@ android {
         versionCode = fluxVersionCode
         versionName = fluxVersionName
         buildConfigField("String", "UPDATE_URL", "\"$fluxUpdateUrl\"")
+        // What the Google Play edition (`play` below) does differently; these are FluxTV's.
+        buildConfigField("String", "APP_NAME", "\"FluxTV\"")
+        buildConfigField("boolean", "SELF_UPDATE", "true")
+        buildConfigField("boolean", "WAKE_SERVICE", "true")
+        buildConfigField("boolean", "SHIZUKU", "true")
+        buildConfigField("String", "SAMPLE_PLAYLIST_URL", "\"https://iptv-org.github.io/iptv/index.m3u\"")
+        buildConfigField("String", "SAMPLE_PLAYLIST_NAME", "\"IPTV-Org Sample\"")
     }
 
     signingConfigs {
@@ -71,6 +100,14 @@ android {
                 storePassword = setting("fluxtv.keystorePassword", "FLUXTV_KEYSTORE_PASSWORD") ?: "android"
                 keyAlias = setting("fluxtv.keyAlias", "FLUXTV_KEY_ALIAS") ?: "androiddebugkey"
                 keyPassword = setting("fluxtv.keyPassword", "FLUXTV_KEY_PASSWORD") ?: storePassword
+            }
+        }
+        if (uploadKeystore != null) {
+            create("upload") {
+                storeFile = file(uploadKeystore)
+                storePassword = setting("fluxtv.uploadKeystorePassword", "FLUXTV_UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias = setting("fluxtv.uploadKeyAlias", "FLUXTV_UPLOAD_KEY_ALIAS") ?: "upload"
+                keyPassword = setting("fluxtv.uploadKeyPassword", "FLUXTV_UPLOAD_KEY_PASSWORD") ?: storePassword
             }
         }
     }
@@ -100,6 +137,22 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // The Google Play edition (see playApplicationId above): a release build, whose own manifest
+        // and resources are in src/play. Google Play refuses a bundle signed with a debug key, which
+        // is what this falls back to when no key is set, for a build to try on a device.
+        create("play") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.findByName("upload")
+                ?: signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+            buildConfigField("String", "APP_NAME", "\"$playAppName\"")
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+            buildConfigField("boolean", "WAKE_SERVICE", "false")
+            buildConfigField("boolean", "SHIZUKU", "false")
+            buildConfigField("String", "SAMPLE_PLAYLIST_URL", "\"$playSamplePlaylist\"")
+            buildConfigField("String", "SAMPLE_PLAYLIST_NAME", "\"$playAppName demo\"")
+        }
     }
 
     compileOptions {
@@ -121,6 +174,16 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+androidComponents {
+    // The Google Play edition's own package and target API level (a build type cannot set either).
+    beforeVariants(selector().withBuildType("play")) { variant ->
+        variant.targetSdk = playTargetSdk
+    }
+    onVariants(selector().withBuildType("play")) { variant ->
+        variant.applicationId.set(playApplicationId)
     }
 }
 

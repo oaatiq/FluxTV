@@ -132,7 +132,7 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
         if (!claimWake()) return
 
         if (isFluxTvOnScreen()) {
-            record("$signal: FluxTV is already on screen")
+            record("$signal: ${AppName} is already on screen")
             return
         }
         scope.launch {
@@ -148,17 +148,17 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
             }
             // Reading the settings can take a moment, in which the TV may have gone back to sleep.
             if (!isAwake()) {
-                record("$signal: the TV went back to sleep, FluxTV left as it was")
+                record("$signal: the TV went back to sleep, ${AppName} left as it was")
                 return@launch
             }
             if (isFluxTvOnScreen()) {
-                record("$signal: FluxTV is already on screen")
+                record("$signal: ${AppName} is already on screen")
                 return@launch
             }
             launchFluxTv(appContext, fromBoot = false)
             record(
-                if (canStartItself(appContext)) "$signal: bringing FluxTV to the front"
-                else "$signal: bringing FluxTV to the front (without \"Display over other apps\", " +
+                if (canStartItself(appContext)) "$signal: bringing ${AppName} to the front"
+                else "$signal: bringing ${AppName} to the front (without \"Display over other apps\", " +
                     "this Android version may refuse it)"
             )
             // Android can refuse the start without saying so, so the history records whether FluxTV
@@ -166,8 +166,8 @@ class StandbyWatcher(context: Context, private val container: AppContainer) {
             // "it told us and would not let us open".
             delay(LAUNCH_CHECK_MS)
             record(
-                if (isFluxTvOnScreen()) "$signal: FluxTV is on screen"
-                else "$signal: FluxTV did not come up — allow it to open itself in " +
+                if (isFluxTvOnScreen()) "$signal: ${AppName} is on screen"
+                else "$signal: ${AppName} did not come up — allow it to open itself in " +
                     "Settings → Preferences"
             )
         }
