@@ -19,6 +19,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluxtv.app.AppName
 import com.fluxtv.app.ui.easymode.WaitingDots
 import com.fluxtv.app.ui.theme.FluxAccent
 import com.fluxtv.app.ui.theme.FluxOnSurface
@@ -34,13 +35,13 @@ import com.fluxtv.app.ui.theme.FluxOnSurface
 fun UpdatingScreen() {
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            BasicText("FluxTV", style = TextStyle(color = FluxAccent, fontSize = 56.sp, fontWeight = FontWeight.Bold))
+            BasicText(AppName, style = TextStyle(color = FluxAccent, fontSize = 56.sp, fontWeight = FontWeight.Bold))
             Spacer(Modifier.height(36.dp))
             DownloadArrow(Modifier.size(72.dp), FluxOnSurface)
             Spacer(Modifier.height(32.dp))
             WaitingDots(20.dp)
             Spacer(Modifier.height(24.dp))
-            BasicText("Updating FluxTV…", style = TextStyle(color = FluxOnSurface, fontSize = 28.sp))
+            BasicText("Updating ${AppName}…", style = TextStyle(color = FluxOnSurface, fontSize = 28.sp))
         }
     }
 }

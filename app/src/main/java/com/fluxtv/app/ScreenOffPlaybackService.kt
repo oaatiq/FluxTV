@@ -102,7 +102,7 @@ class ScreenOffPlaybackService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), FOREGROUND_TYPE)
             foreground = true
         } catch (e: Exception) {
-            record("Android did not let FluxTV play on with the screen off: ${e.javaClass.simpleName}")
+            record("Android did not let ${AppName} play on with the screen off: ${e.javaClass.simpleName}")
             container.playerController.endScreenOffPlayback("Could not play on with the screen off")
             finish()
             return START_NOT_STICKY

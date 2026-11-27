@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
+import com.fluxtv.app.AppName
 import com.fluxtv.app.BootTrace
 import com.fluxtv.app.data.cache.DiagnosticsStore
 import com.fluxtv.app.data.model.Channel
@@ -348,7 +349,7 @@ class FluxPlayerController(
      * edge once the new surface is in place, which also builds a fresh decoder for it.
      */
     fun onStop() {
-        if (stopPlayback() && currentChannel != null) logEvent("standby", "FluxTV left the screen: playback stopped")
+        if (stopPlayback() && currentChannel != null) logEvent("standby", "${AppName} left the screen: playback stopped")
     }
 
     /** Stops the channel off screen; false if there was no player to stop. */

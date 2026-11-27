@@ -1,11 +1,12 @@
 package com.fluxtv.app.data.remote
 
+import com.fluxtv.app.AppName
 import okhttp3.ConnectionSpec
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /** The name FluxTV gives providers' servers unless Preferences or the playlist gives another. */
-const val DEFAULT_USER_AGENT = "FluxTV/1.0"
+const val DEFAULT_USER_AGENT = "${AppName}/1.0"
 
 /**
  * [value] without what an HTTP header cannot carry. OkHttp refuses a request with a control

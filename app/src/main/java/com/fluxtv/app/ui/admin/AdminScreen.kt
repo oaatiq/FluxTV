@@ -1,5 +1,8 @@
 package com.fluxtv.app.ui.admin
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fluxtv.app.AppName
 import com.fluxtv.app.BuildConfig
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ShizukuWake
@@ -241,7 +245,7 @@ private fun AdminMenu(
 ) {
     // On a touch screen nothing is picked until it is touched: no first focus.
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionTitle("FluxTV Settings")
+        SectionTitle("${AppName} Settings")
         BasicText(
             (state.settings.activePlaylist?.let { "“${it.name}” • " } ?: "") + "${state.channels.size} channels" +
                 if (state.lastUpdatedMs > 0) " • updated ${formatTime(state.lastUpdatedMs)}" else "",
@@ -258,7 +262,7 @@ private fun AdminMenu(
         FluxButton("Diagnostics", Modifier.formWidth(0.55f)) { onSelect(AdminSection.DIAGNOSTICS) }
         FluxButton("Updates", Modifier.formWidth(0.55f)) { onSelect(AdminSection.UPDATES) }
         FluxButton("Back to TV", Modifier.formWidth(0.55f)) { onExit() }
-        FluxButton("Exit FluxTV", Modifier.formWidth(0.55f)) { onExitApp() }
+        FluxButton("Exit ${AppName}", Modifier.formWidth(0.55f)) { onExitApp() }
     }
 }
 
@@ -346,22 +350,34 @@ internal fun tvMenuSections(
             description = "How the channel is playing (decoding, picture, bitrate, buffering) and a " +
                 "history of what happened, to find out why a channel stops.",
             facts = listOf(
-                "FluxTV version" to installedVersion,
+                "${AppName} version" to installedVersion,
                 "Channel" to (d.channelName ?: "—"),
                 "Decoding" to decodeLabel(d),
                 "Resolution" to if (d.videoWidth > 0) "${d.videoWidth}×${d.videoHeight}" else "—"
             ),
             onClick = { onSelect(AdminSection.DIAGNOSTICS) }
         ),
-        TvMenuEntry(
+        if (!BuildConfig.SELF_UPDATE) TvMenuEntry(
+            key = AdminSection.UPDATES.name,
+            icon = Icons.Filled.Refresh,
+            title = "Updates",
+            value = "Google Play",
+            description = "Google Play keeps $AppName up to date. See the version running, or open its page " +
+                "in Google Play.",
+            facts = listOf(
+                "This $AppName" to installedVersion,
+                "Updated by" to "Google Play"
+            ),
+            onClick = { onSelect(AdminSection.UPDATES) }
+        ) else TvMenuEntry(
             key = AdminSection.UPDATES.name,
             icon = Icons.Filled.Refresh,
             title = "Updates",
             value = updateShortStatus(updates),
-            description = "FluxTV looks for new versions and installs them when nobody is watching. " +
+            description = "${AppName} looks for new versions and installs them when nobody is watching. " +
                 "See the version running and the newest, or install one now.",
             facts = listOf(
-                "This FluxTV" to installedVersion,
+                "This ${AppName}" to installedVersion,
                 "Newest" to (updates.latest?.label ?: if (updates.phase == UpdatePhase.UP_TO_DATE) "The same" else "—"),
                 "Automatic updates" to onOff(settings.autoUpdate),
                 "Last looked" to if (updates.lastCheckMs > 0) formatTime(updates.lastCheckMs) else "Not yet"
@@ -387,8 +403,8 @@ internal fun tvMenuActions(state: UiState, onExit: () -> Unit, onExitApp: () -> 
         TvMenuEntry(
             key = "EXIT_APP",
             icon = Icons.AutoMirrored.Filled.ExitToApp,
-            title = "Exit FluxTV",
-            description = "Close FluxTV. Open it again from the TV's home screen: it comes back on the last " +
+            title = "Exit ${AppName}",
+            description = "Close ${AppName}. Open it again from the TV's home screen: it comes back on the last " +
                 "channel." + if (state.settings.startOnBoot) " It also opens by itself when the TV turns on." else "",
             opens = false,
             onClick = onExitApp
@@ -692,8 +708,9 @@ private fun AddByTypingSection(state: UiState, vm: AppViewModel) {
         ButtonRow {
             FluxButton("Check and add") { vm.addTypedPlaylist(url, name, if (isFile) "file" else "url") }
             FluxButton("Use sample test playlist") {
-                url = "https://iptv-org.github.io/iptv/index.m3u"
-                name = "IPTV-Org Sample"
+                // The Google Play edition's is a short list of openly licensed test streams (play/).
+                url = BuildConfig.SAMPLE_PLAYLIST_URL
+                name = BuildConfig.SAMPLE_PLAYLIST_NAME
                 isFile = false
             }
         }
@@ -935,7 +952,7 @@ private fun TouchPreferences(state: UiState, vm: AppViewModel) {
         ) { vm.setPlayWithScreenOff(it) }
         BasicText(
             "The channel's sound goes on when the phone's screen turns off, with Stop on the lock " +
-                "screen. The picture comes back when you return to FluxTV. Uses more battery and data.",
+                "screen. The picture comes back when you return to ${AppName}. Uses more battery and data.",
             style = TextStyle(color = FluxMuted, fontSize = 15.sp)
         )
 
@@ -961,7 +978,7 @@ private fun TouchPreferences(state: UiState, vm: AppViewModel) {
         )
         ButtonRow {
             FluxButton("Save player name") { vm.setUserAgent(userAgent) }
-            FluxButton("Use FluxTV's own") { userAgent = ""; vm.setUserAgent("") }
+            FluxButton("Use ${AppName}'s own") { userAgent = ""; vm.setUserAgent("") }
         }
 
         BasicText("Settings PIN (optional)", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
@@ -1070,8 +1087,8 @@ private fun TvPreferences(state: UiState, vm: AppViewModel) {
         TvSettingItem(
             key = "startOnBoot",
             label = "Start with the TV",
-            title = "Start FluxTV when the TV turns on",
-            description = "FluxTV opens by itself on the last channel when the TV turns on or wakes, with " +
+            title = "Start ${AppName} when the TV turns on",
+            description = "${AppName} opens by itself on the last channel when the TV turns on or wakes, with " +
                 "nothing to press.",
             kind = TvSettingKind.Toggle(settings.startOnBoot) { vm.setStartOnBoot(it) },
             note = if (needsSelfStart) "Needs one more permission" else null,
@@ -1085,11 +1102,11 @@ private fun TvPreferences(state: UiState, vm: AppViewModel) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (needsSelfStart) {
                         BasicText(
-                            "This Android version needs one more permission before FluxTV may open itself. " +
-                                "Choose FluxTV on the next screen and allow it.",
+                            "This Android version needs one more permission before ${AppName} may open itself. " +
+                                "Choose ${AppName} on the next screen and allow it.",
                             style = TextStyle(color = FluxWarning, fontSize = 18.sp, lineHeight = 25.sp)
                         )
-                        FluxButton("Allow FluxTV to open itself", focusRequester = firstButton()) {
+                        FluxButton("Allow ${AppName} to open itself", focusRequester = firstButton()) {
                             openSelfStartPermission(context)
                         }
                     }
@@ -1097,17 +1114,17 @@ private fun TvPreferences(state: UiState, vm: AppViewModel) {
                         ShizukuWake.State.NOT_RUNNING -> Unit
                         ShizukuWake.State.NEEDS_PERMISSION -> {
                             BasicText(
-                                "Shizuku is running on this TV. Allow FluxTV to use it and FluxTV will also " +
+                                "Shizuku is running on this TV. Allow ${AppName} to use it and ${AppName} will also " +
                                     "start by itself when the TV wakes after it was force-stopped.",
                                 style = muted
                             )
-                            FluxButton("Allow FluxTV to use Shizuku", focusRequester = firstButton()) {
+                            FluxButton("Allow ${AppName} to use Shizuku", focusRequester = firstButton()) {
                                 shizuku.requestPermission()
                             }
                         }
                         ShizukuWake.State.STARTING -> BasicText("Starting the Shizuku helper…", style = muted)
                         ShizukuWake.State.ACTIVE -> BasicText(
-                            "Shizuku helper active: FluxTV starts when the TV wakes, even after a force-stop.",
+                            "Shizuku helper active: ${AppName} starts when the TV wakes, even after a force-stop.",
                             style = muted
                         )
                     }
@@ -1128,9 +1145,9 @@ private fun TvPreferences(state: UiState, vm: AppViewModel) {
         TvSettingItem(
             key = "userAgent",
             label = "Player name",
-            description = "The name FluxTV gives the provider. Some only serve players they know: enter " +
+            description = "The name ${AppName} gives the provider. Some only serve players they know: enter " +
                 "the one they give, for example VLC/3.0.20. Empty: $DEFAULT_USER_AGENT.",
-            kind = TvSettingKind.Edit(settings.userAgent.ifBlank { "FluxTV's own" }),
+            kind = TvSettingKind.Edit(settings.userAgent.ifBlank { "${AppName}'s own" }),
             panel = { controls ->
                 FluxTextField(
                     label = "User-Agent",
@@ -1143,7 +1160,7 @@ private fun TvPreferences(state: UiState, vm: AppViewModel) {
                 Spacer(Modifier.height(16.dp))
                 ButtonRow {
                     FluxButton("Save") { vm.setUserAgent(userAgent); controls.done() }
-                    FluxButton("Use FluxTV's own") { userAgent = ""; vm.setUserAgent(""); controls.done() }
+                    FluxButton("Use ${AppName}'s own") { userAgent = ""; vm.setUserAgent(""); controls.done() }
                 }
             }
         ),
@@ -1210,7 +1227,7 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
 
         item {
             Column(Modifier.padding(bottom = 12.dp)) {
-                InfoRow("FluxTV version", vm.installedVersion)
+                InfoRow("${AppName} version", vm.installedVersion)
                 InfoRow("Channel", d.channelName ?: "—")
                 reachability?.let { InfoRow("Reachability", it) }
                 InfoRow("Decoding", decodeLabel(d))
@@ -1256,6 +1273,10 @@ private fun DiagnosticsSection(state: UiState, vm: AppViewModel) {
  */
 @Composable
 private fun UpdatesSection(state: UiState, vm: AppViewModel) {
+    if (!BuildConfig.SELF_UPDATE) {
+        StoreUpdatesSection(vm)
+        return
+    }
     val context = LocalContext.current
     val updates by vm.updates.collectAsStateWithLifecycle()
     var route by remember { mutableStateOf(vm.updateRoute()) }
@@ -1280,7 +1301,7 @@ private fun UpdatesSection(state: UiState, vm: AppViewModel) {
     ) {
         SectionTitle("Updates")
         Column(Modifier.formWidth(0.7f)) {
-            InfoRow("This FluxTV", vm.installedVersion)
+            InfoRow("This ${AppName}", vm.installedVersion)
             InfoRow(
                 "Newest",
                 updates.latest?.label ?: if (updates.phase == UpdatePhase.UP_TO_DATE) "The same" else "—"
@@ -1307,13 +1328,13 @@ private fun UpdatesSection(state: UiState, vm: AppViewModel) {
         }
 
         FluxToggleRow(
-            "Update FluxTV automatically",
+            "Update ${AppName} automatically",
             state.settings.autoUpdate,
             Modifier.formWidth(0.7f)
         ) { vm.setAutoUpdate(it) }
         BasicText(
             "New versions are downloaded in the background and installed when nobody is watching: in " +
-                "standby, or when FluxTV starts. Settings and channels are kept. Off: FluxTV still looks, " +
+                "standby, or when ${AppName} starts. Settings and channels are kept. Off: ${AppName} still looks, " +
                 "and Install now installs.",
             style = TextStyle(color = FluxMuted, fontSize = 15.sp)
         )
@@ -1321,7 +1342,7 @@ private fun UpdatesSection(state: UiState, vm: AppViewModel) {
         BasicText("How updates install on this $device", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         BasicText(routeText(route, device), style = TextStyle(color = FluxOnSurface, fontSize = 18.sp))
         if (route == InstallRoute.NOT_ALLOWED) {
-            FluxButton("Allow FluxTV to install updates") { openInstallPermission(context) }
+            FluxButton("Allow ${AppName} to install updates") { openInstallPermission(context) }
         }
         if (!touch) {
             // Shizuku is the quiet way on every Android version: say so where it runs and is not allowed.
@@ -1329,26 +1350,26 @@ private fun UpdatesSection(state: UiState, vm: AppViewModel) {
             val shizukuState by shizuku.state.collectAsState()
             if (shizukuState == ShizukuWake.State.NEEDS_PERMISSION) {
                 BasicText(
-                    "Shizuku is running on this TV. Allow FluxTV to use it and updates install without " +
+                    "Shizuku is running on this TV. Allow ${AppName} to use it and updates install without " +
                         "any question, on any Android version.",
                     style = TextStyle(color = FluxMuted, fontSize = 17.sp)
                 )
-                FluxButton("Allow FluxTV to use Shizuku") { shizuku.requestPermission() }
+                FluxButton("Allow ${AppName} to use Shizuku") { shizuku.requestPermission() }
             }
             if ((route == InstallRoute.SILENT || route == InstallRoute.HELPER) && !canRelaunch) {
                 BasicText(
-                    "To come back by itself after an update installed while it is on screen, FluxTV needs " +
-                        "\"Display over other apps\". Until then, updates are installed only while FluxTV is " +
+                    "To come back by itself after an update installed while it is on screen, ${AppName} needs " +
+                        "\"Display over other apps\". Until then, updates are installed only while ${AppName} is " +
                         "off screen (standby).",
                     style = TextStyle(color = FluxMuted, fontSize = 17.sp)
                 )
-                FluxButton("Allow FluxTV to open itself") { openSelfStartPermission(context) }
+                FluxButton("Allow ${AppName} to open itself") { openSelfStartPermission(context) }
             }
         }
 
         BasicText("Update address", style = TextStyle(color = FluxMuted, fontSize = 18.sp))
         BasicText(
-            "Where FluxTV looks for new versions: the update.json of a release. Empty: ${BuildConfig.UPDATE_URL}",
+            "Where ${AppName} looks for new versions: the update.json of a release. Empty: ${BuildConfig.UPDATE_URL}",
             style = TextStyle(color = FluxMuted, fontSize = 15.sp)
         )
         FluxTextField(
@@ -1366,10 +1387,53 @@ private fun UpdatesSection(state: UiState, vm: AppViewModel) {
     }
 }
 
+/**
+ * Settings → Updates in the Google Play edition. Google Play installs its updates, and its policy lets
+ * an app from Google Play be updated no other way, so this shows the version running and opens its
+ * page in Google Play, where an update can also be started by hand.
+ */
+@Composable
+private fun StoreUpdatesSection(vm: AppViewModel) {
+    val context = LocalContext.current
+    val first = remember { FocusRequester() }
+    val touch = LocalTouchUi.current
+    LaunchedEffect(Unit) { if (!touch) runCatching { first.requestFocus() } }
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        SectionTitle("Updates")
+        Column(Modifier.formWidth(0.7f)) {
+            InfoRow("This ${AppName}", vm.installedVersion)
+        }
+        BasicText(
+            "Google Play keeps $AppName up to date, as it does the other apps from Google Play. Playlists, " +
+                "favorites and settings are kept through each update.",
+            style = TextStyle(color = FluxOnSurface, fontSize = 20.sp)
+        )
+        ButtonRow {
+            FluxButton("Open in Google Play", focusRequester = first) { openStorePage(context) }
+        }
+    }
+}
+
+/** This app's page in the Google Play app, or on the web where the Play app cannot open it. */
+private fun openStorePage(context: Context) {
+    val id = context.packageName
+    for (address in listOf("market://details?id=$id", "https://play.google.com/store/apps/details?id=$id")) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (_: Exception) {
+            // No app for that address: try the next one.
+        }
+    }
+}
+
 private fun updateStatusText(u: UpdateStatus, route: InstallRoute, automatic: Boolean): String = when (u.phase) {
-    UpdatePhase.IDLE -> "FluxTV has not looked for updates yet."
+    UpdatePhase.IDLE -> "${AppName} has not looked for updates yet."
     UpdatePhase.CHECKING -> "Looking for updates…"
-    UpdatePhase.UP_TO_DATE -> "FluxTV is up to date."
+    UpdatePhase.UP_TO_DATE -> "${AppName} is up to date."
     UpdatePhase.AVAILABLE -> when {
         u.blocked -> "A new version is available, but it cannot be installed on this TV."
         automatic -> "A new version is available. It is downloaded by itself."
@@ -1383,23 +1447,23 @@ private fun updateStatusText(u: UpdateStatus, route: InstallRoute, automatic: Bo
         u.blocked -> "It cannot be installed on this TV."
         !automatic -> "Install now installs it."
         route == InstallRoute.HELPER || route == InstallRoute.SILENT ->
-            "It installs by itself when FluxTV is next off screen (standby) or starts."
-        route == InstallRoute.CONFIRM -> "Android asks about it when FluxTV next starts: choose Install."
-        else -> "It installs once FluxTV is allowed to (below)."
+            "It installs by itself when ${AppName} is next off screen (standby) or starts."
+        route == InstallRoute.CONFIRM -> "Android asks about it when ${AppName} next starts: choose Install."
+        else -> "It installs once ${AppName} is allowed to (below)."
     }
     UpdatePhase.INSTALLING -> "Installing the new version…"
 }
 
 private fun routeText(route: InstallRoute, device: String): String = when (route) {
     InstallRoute.HELPER ->
-        "Silently, through the Shizuku helper: nothing to answer, and FluxTV comes back by itself."
+        "Silently, through the Shizuku helper: nothing to answer, and ${AppName} comes back by itself."
     InstallRoute.SILENT ->
-        "Silently: this Android version installs FluxTV's own updates without asking anyone."
+        "Silently: this Android version installs ${AppName}'s own updates without asking anyone."
     InstallRoute.CONFIRM ->
-        "Android asks before each installation on this $device. FluxTV shows the question when it starts, " +
+        "Android asks before each installation on this $device. ${AppName} shows the question when it starts, " +
             "at most once a day: choose Install. With Shizuku running on a TV, nothing is asked."
     InstallRoute.NOT_ALLOWED ->
-        "FluxTV is not allowed to install apps yet. Choose FluxTV on the next screen and allow it; this is " +
+        "${AppName} is not allowed to install apps yet. Choose ${AppName} on the next screen and allow it; this is " +
             "needed once."
 }
 

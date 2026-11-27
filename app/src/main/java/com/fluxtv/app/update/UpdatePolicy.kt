@@ -1,5 +1,7 @@
 package com.fluxtv.app.update
 
+import com.fluxtv.app.AppName
+
 /**
  * How this TV can install FluxTV's updates, best first. Which one applies is worked out each time
  * (see [UpdateManager.route]), as the administrator can change it at any moment.
@@ -172,8 +174,8 @@ object UpdatePolicy {
         val text = message.orEmpty()
         return when {
             listOf("UPDATE_INCOMPATIBLE", "INCONSISTENT_CERTIFICATES", "NO_CERTIFICATES").any { text.contains(it) } ->
-                "Android refused the update: it is signed with another key than the FluxTV on this TV"
-            text.contains("VERSION_DOWNGRADE") -> "Android refused the update: it is older than the FluxTV on this TV"
+                "Android refused the update: it is signed with another key than the ${AppName} on this TV"
+            text.contains("VERSION_DOWNGRADE") -> "Android refused the update: it is older than the ${AppName} on this TV"
             text.contains("OLDER_SDK") -> "Android refused the update: it needs a newer Android version"
             text.contains("NO_MATCHING_ABIS") -> "Android refused the update: it has no code for this TV's processor"
             text.contains("INSUFFICIENT_STORAGE") -> "Android could not install the update: not enough free space"

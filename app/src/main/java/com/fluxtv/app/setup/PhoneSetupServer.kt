@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Build
 import android.provider.Settings
+import com.fluxtv.app.AppName
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Inet4Address
@@ -268,10 +269,10 @@ class PhoneSetupServer(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="referrer" content="no-referrer">
         ${if (refreshSeconds > 0) "<meta http-equiv=\"refresh\" content=\"$refreshSeconds;url=/$token/status\">" else ""}
-        <title>Add channels to FluxTV</title>
+        <title>Add channels to ${AppName}</title>
         <style>$CSS</style></head>
         <body><main>
-        <h1>Add channels to FluxTV</h1>
+        <h1>Add channels to ${AppName}</h1>
         ${if (showTv) tvBlock() else ""}
         ${status.orEmpty()}
         $content

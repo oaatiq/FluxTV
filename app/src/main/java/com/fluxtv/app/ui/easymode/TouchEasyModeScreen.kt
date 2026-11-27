@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.fluxtv.app.AppName
 import com.fluxtv.app.data.guide.Guide
 import com.fluxtv.app.data.model.Channel
 import com.fluxtv.app.playback.PlaybackProblem
@@ -968,7 +969,7 @@ private fun NoChannels(state: UiState, onSettings: () -> Unit, modifier: Modifie
         state.isRefreshing -> "Loading channels…" to
             "The first time can take a few minutes. TV starts on its own when they arrive."
         state.firstLoadFailed -> "Can't load the channels" to
-            "FluxTV keeps trying, and TV starts on its own when they arrive. If this lasts, check the " +
+            "${AppName} keeps trying, and TV starts on its own when they arrive. If this lasts, check the " +
             "internet connection and the playlist address in Settings."
         else -> "No channels yet" to "Open Settings to add your playlist."
     }

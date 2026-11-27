@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.IntentCompat
+import com.fluxtv.app.AppName
 import com.fluxtv.app.BuildConfig
 import com.fluxtv.app.ShizukuWake
 import com.fluxtv.app.canStartItself
@@ -100,6 +101,9 @@ data class UpdateStatus(
  * tried again later, at growing intervals ([UpdatePolicy.retryDelayMs]); one that cannot ever work
  * (a build signed with another key) is not tried again by itself. Each step is written to the
  * Diagnostics history under `[update]`, and the new version records the update when it first runs.
+ *
+ * **The Google Play edition** (`BuildConfig.SELF_UPDATE` false, play/README.md) never looks, downloads
+ * or installs: Google Play updates it. Only the record of a new version is kept there.
  */
 class UpdateManager(
     context: Context,
@@ -193,6 +197,7 @@ class UpdateManager(
      * file, waiting for Android) is done off the caller's thread, which may be the main one.
      */
     suspend fun installAtStart(): Unit = withContext(Dispatchers.IO) {
+        if (!BuildConfig.SELF_UPDATE) return@withContext
         loaded.await()
         if (current.readyVersionCode == 0L) return@withContext
         // Never hold up the start behind a download or a look that is under way.
@@ -206,7 +211,7 @@ class UpdateManager(
 
     /** Looks for an update a little after FluxTV starts, once its first channel has had its turn. */
     fun onAppStarted() {
-        if (startCheckScheduled) return
+        if (!BuildConfig.SELF_UPDATE || startCheckScheduled) return
         startCheckScheduled = true
         scope.launch {
             delay(STARTUP_CHECK_DELAY_MS)
@@ -216,6 +221,7 @@ class UpdateManager(
 
     /** The periodic background job, and the look after the start. */
     suspend fun runAutomatic(): Unit = withContext(Dispatchers.IO) {
+        if (!BuildConfig.SELF_UPDATE) return@withContext
         loaded.await()
         work.withLock {
             lookAndFetch(manual = false)
@@ -229,7 +235,7 @@ class UpdateManager(
      * going into standby could otherwise be suspended before the installation is done.
      */
     fun onLeftScreen() {
-        if (current.readyVersionCode == 0L) return
+        if (!BuildConfig.SELF_UPDATE || current.readyVersionCode == 0L) return
         leftScreenJob?.cancel()
         leftScreenJob = scope.launch {
             keepingAwake(LEFT_SCREEN_SETTLE_MS + INSTALL_WAKE_MS) {
@@ -242,6 +248,7 @@ class UpdateManager(
 
     /** Settings → Updates → Check for updates: looks now, and downloads what it finds. */
     fun checkNow() {
+        if (!BuildConfig.SELF_UPDATE) return
         scope.launch {
             loaded.await()
             work.withLock {
@@ -253,6 +260,7 @@ class UpdateManager(
 
     /** Settings → Updates → Install now: whatever the hour, and even a build that failed before. */
     fun installNow() {
+        if (!BuildConfig.SELF_UPDATE) return
         scope.launch {
             loaded.await()
             work.withLock {
@@ -297,8 +305,8 @@ class UpdateManager(
         if (isFluxTvOnScreen()) return@withContext
         launchFluxTv(appContext, fromBoot = false)
         record(
-            if (canStartItself(appContext)) "Starting FluxTV again on the new version"
-            else "Starting FluxTV again on the new version (without \"Display over other apps\", " +
+            if (canStartItself(appContext)) "Starting ${AppName} again on the new version"
+            else "Starting ${AppName} again on the new version (without \"Display over other apps\", " +
                 "this Android version may refuse it)"
         )
     }
@@ -352,7 +360,7 @@ class UpdateManager(
                 mutate {
                     it.copy(
                         installing = null,
-                        problem = "The installation was cancelled on screen; Android asks again when FluxTV " +
+                        problem = "The installation was cancelled on screen; Android asks again when ${AppName} " +
                             "next starts (at most once a day)"
                     )
                 }
@@ -433,16 +441,16 @@ class UpdateManager(
         }
         if (isNew) {
             removeFiles(keep = found.versionCode)
-            record("Found FluxTV ${found.label} (this is ${installedLabel})")
+            record("Found ${AppName} ${found.label} (this is ${installedLabel})")
         }
         if (found.minSdk > Build.VERSION.SDK_INT && current.blockedVersionCode != found.versionCode) {
             mutate {
                 it.copy(
                     blockedVersionCode = found.versionCode,
-                    problem = "FluxTV ${found.label} needs a newer Android version than this TV has"
+                    problem = "${AppName} ${found.label} needs a newer Android version than this TV has"
                 )
             }
-            record("FluxTV ${found.label} needs Android API ${found.minSdk}; this TV has ${Build.VERSION.SDK_INT}")
+            record("${AppName} ${found.label} needs Android API ${found.minSdk}; this TV has ${Build.VERSION.SDK_INT}")
         }
     }
 
@@ -473,7 +481,7 @@ class UpdateManager(
     private suspend fun download(info: UpdateInfo) {
         setActivity(Activity(UpdatePhase.DOWNLOADING, 0, info.size))
         val file = apkFile(info)
-        if (!File(file.path + ".part").exists()) record("Downloading FluxTV ${info.label}")
+        if (!File(file.path + ".part").exists()) record("Downloading ${AppName} ${info.label}")
         var shownMs = 0L
         val result = try {
             downloader.download(info, file, ::allowedBytesPerSecond) { done, total ->
@@ -503,7 +511,7 @@ class UpdateManager(
                         problem = null
                     )
                 }
-                record("FluxTV ${info.label} downloaded and checked; it installs ${whenText(route())}")
+                record("${AppName} ${info.label} downloaded and checked; it installs ${whenText(route())}")
             }
         }
     }
@@ -587,7 +595,7 @@ class UpdateManager(
         mutate { it.copy(installing = attempt) }
         val covering = onScreen && !ask
         setActivity(Activity(UpdatePhase.INSTALLING, onScreen = covering))
-        record("Installing FluxTV ${info.label} ${describeRoute(route)}" + if (onScreen) " (FluxTV was on screen)" else "")
+        record("Installing ${AppName} ${info.label} ${describeRoute(route)}" + if (onScreen) " (${AppName} was on screen)" else "")
         try {
             keepingAwake(INSTALL_WAKE_MS) {
                 // The picture gives way to "Updating FluxTV…" and the channel stops before FluxTV closes.
@@ -654,10 +662,10 @@ class UpdateManager(
                     it.copy(
                         installing = null,
                         androidAsks = true,
-                        problem = "Android wants to ask before installing on this TV; it asks when FluxTV next starts"
+                        problem = "Android wants to ask before installing on this TV; it asks when ${AppName} next starts"
                     )
                 }
-                record("Android wants to ask before installing the update; it will, when FluxTV next starts on screen")
+                record("Android wants to ask before installing the update; it will, when ${AppName} next starts on screen")
             }
             is SessionOutcome.Failed -> mutate {
                 failed(
@@ -699,8 +707,12 @@ class UpdateManager(
                     attempt != null ->
                         "Updated from ${versionLabel(attempt.fromVersionName, attempt.fromVersionCode)} to " +
                             "$installedLabel, ${describeRoute(attempt.route)}"
-                    r.lastRunVersionCode == 0L -> "FluxTV $installedLabel; it looks for updates by itself"
-                    else -> "FluxTV is now $installedLabel (it was build ${r.lastRunVersionCode}; installed from outside FluxTV)"
+                    !BuildConfig.SELF_UPDATE && r.lastRunVersionCode == 0L ->
+                        "${AppName} $installedLabel; Google Play keeps it up to date"
+                    !BuildConfig.SELF_UPDATE ->
+                        "${AppName} is now $installedLabel (it was build ${r.lastRunVersionCode}; updated by Google Play)"
+                    r.lastRunVersionCode == 0L -> "${AppName} $installedLabel; it looks for updates by itself"
+                    else -> "${AppName} is now $installedLabel (it was build ${r.lastRunVersionCode}; installed from outside ${AppName})"
                 }
             )
             justUpdated = attempt
@@ -865,9 +877,9 @@ class UpdateManager(
 
     private fun whenText(route: InstallRoute): String = when (route) {
         InstallRoute.HELPER, InstallRoute.SILENT ->
-            "silently once FluxTV is off screen (standby), or when it next starts"
-        InstallRoute.CONFIRM -> "when FluxTV next starts, after Android's question"
-        InstallRoute.NOT_ALLOWED -> "once FluxTV is allowed to install apps (Settings → Updates)"
+            "silently once ${AppName} is off screen (standby), or when it next starts"
+        InstallRoute.CONFIRM -> "when ${AppName} next starts, after Android's question"
+        InstallRoute.NOT_ALLOWED -> "once ${AppName} is allowed to install apps (Settings → Updates)"
     }
 
     private fun timeText(ms: Long): String =

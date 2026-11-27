@@ -132,7 +132,7 @@ class WakeListenerService : Service() {
             } catch (e: Exception) {
                 // ForegroundServiceStartNotAllowedException, from the background: tried again when
                 // FluxTV is next on screen.
-                record(context, "Android did not let FluxTV listen for the TV to wake yet; it will when FluxTV is opened")
+                record(context, "Android did not let ${AppName} listen for the TV to wake yet; it will when ${AppName} is opened")
             }
         }
 

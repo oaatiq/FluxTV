@@ -73,7 +73,7 @@ class ShizukuWake(context: Context, private val container: AppContainer) {
             mutableState.value = State.ACTIVE
             scope.launch {
                 pushPreference()
-                record("Shizuku helper running: FluxTV will start when the TV wakes, even after a force-stop")
+                record("Shizuku helper running: ${AppName} will start when the TV wakes, even after a force-stop")
             }
         }
 
@@ -199,7 +199,7 @@ class ShizukuWake(context: Context, private val container: AppContainer) {
                 !Shizuku.pingBinder() || Shizuku.isPreV11() -> mutableState.value = State.NOT_RUNNING
                 Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED -> {
                     if (mutableState.value != State.NEEDS_PERMISSION) {
-                        record("Shizuku is running, but FluxTV is not allowed to use it yet")
+                        record("Shizuku is running, but ${AppName} is not allowed to use it yet")
                     }
                     mutableState.value = State.NEEDS_PERMISSION
                 }

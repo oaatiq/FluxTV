@@ -25,7 +25,7 @@ recovery, adaptation and buffering are engineered so the Viewer rarely has to do
 - **ZXing** (core only) to draw the QR code a phone scans to send a playlist to the TV
 - No Hilt/Room/KSP — a tiny manual DI container keeps the build simple and robust
 
-Targets: `minSdk 24` (Android 7) · `targetSdk 34` · `compileSdk 35`.
+Targets: `minSdk 24` (Android 7) · `targetSdk 34` (36 in the Google Play edition) · `compileSdk 35`.
 
 ## Build
 
@@ -697,6 +697,18 @@ Any web server the TVs reach works as well: put the APK and an `update.json` mad
 - The download needs the release's address to be reachable from the TV; a private repository is
   not. Point the update address at a web server the TVs reach instead.
 
+## Google Play edition (MotionTV)
+
+FluxTV is published on Google Play as **MotionTV** (`io.github.oaatiq.motiontv`): Play already lists
+another company's "FluxTV" under `com.fluxtv.app`. It is a separate app that installs beside FluxTV,
+never over it, so the TVs above keep their FluxTV and its GitHub updates.
+
+It is the `play` build type (`./gradlew :app:bundlePlay`), with its own manifest and resources in
+`app/src/play`: no self-updates (Google Play updates it), no Shizuku helper, no wake listener
+service, a sample playlist of openly licensed streams, and `targetSdk` 36. The name it shows comes
+from `AppName`. [play/README.md](play/README.md) has the listing, graphics, privacy policy and the
+publishing steps.
+
 ## Acceptance testing
 
 **The Grandfather Test (§27).** Without any explanation, a first-time user should be able to: turn
@@ -838,6 +850,9 @@ app/src/main/java/com/fluxtv/app/
 The launcher artwork in `app/src/main/res` — the TV home-screen tile (banner) and the app icon — is
 built from `art/fluxtv-logo.webp` by `tools/make_launcher_art.py`. It shows only on the TV's home
 screen and in app lists, never inside FluxTV.
+
+`app/src/play` holds what the Google Play edition, MotionTV, has of its own (manifest, name, banner),
+and `play/` its store listing; `tools/make_play_art.py` builds its banner and listing graphics.
 
 ## Non-goals (V1)
 

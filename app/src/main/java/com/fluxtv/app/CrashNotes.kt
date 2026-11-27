@@ -38,7 +38,7 @@ object CrashNotes {
         val time = lines.getOrNull(0)?.toLongOrNull() ?: System.currentTimeMillis()
         val channel = lines.getOrNull(1)?.ifBlank { null }
         val what = lines.drop(2).joinToString(" ").ifBlank { "no details" }
-        store.append(DiagnosticsEvent(time, channel, "crash", "FluxTV stopped: $what"))
+        store.append(DiagnosticsEvent(time, channel, "crash", "${AppName} stopped: $what"))
     }
 
     /** The error and its first cause, each with the place in FluxTV's code it came from. */

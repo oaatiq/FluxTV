@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.fluxtv.app.AppContainer
+import com.fluxtv.app.AppName
 import com.fluxtv.app.FluxTvApplication
 import com.fluxtv.app.ScreenOffPlaybackService
 import com.fluxtv.app.data.guide.Guide
@@ -1174,7 +1175,7 @@ class AppViewModel(
         val controller = container.playerController
         if (!controller.continueWithScreenOff()) return false
         if (ScreenOffPlaybackService.start(getApplication())) return true
-        controller.endScreenOffPlayback("Android did not let FluxTV play on with the screen off")
+        controller.endScreenOffPlayback("Android did not let ${AppName} play on with the screen off")
         return false
     }
 
@@ -1201,7 +1202,7 @@ class AppViewModel(
             _surfaceGeneration.update { it + 1 }
             delay(SURFACE_WAIT_MS)
             if (!stillWaitingForSurface()) return@launch
-            logStandby("Still no video surface: reopening the FluxTV screen")
+            logStandby("Still no video surface: reopening the ${AppName} screen")
             _recreateWanted.tryEmit(Unit)
         }
     }

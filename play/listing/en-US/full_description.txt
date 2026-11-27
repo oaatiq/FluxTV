@@ -1,0 +1,35 @@
+MotionTV turns an Android TV, a TV box, a phone or a tablet into a simple television: turn it on and watch TV. It is made for the person in front of the screen, who only deals with channels, favorites and volume, and for the person who sets it up for them.
+
+MotionTV does not include, sell or host any channels or content. It plays the M3U playlist you add from a TV provider you are subscribed to. Please only use playlists you are entitled to watch.
+
+WATCHING, MADE SIMPLE
+• Easy Mode: channels, favorites, volume and what is on. No technical words, no menus to get lost in.
+• Change channel with ▲ ▼, type a channel number, or press OK for the channel list with its categories.
+• A banner with the channel's name, logo, the programme on now and next, and a clock.
+• Text size up to extra large, and even volume between loud and quiet channels.
+• Channel numbers and favorites stay where they are when your provider updates the playlist.
+
+SET UP ONCE
+• Add your playlist by scanning a QR code with your phone and pasting the link, or type it with the remote.
+• Keep several playlists, each with its own favorites and last channel; switch between them in Settings.
+• Programme guide (XMLTV, also gzipped) from the playlist or a link of your own.
+• A Settings PIN keeps everything set up as you left it.
+• MotionTV can open by itself on the last channel when the TV is turned on; turn this off in Settings → Preferences. Android 10 and newer first ask you to allow "Display over other apps" for it.
+
+KEEPS PLAYING
+• When the network or the provider hiccups, MotionTV reconnects by itself and says calmly what is happening, without error codes.
+• Plays HLS, DASH and MPEG-TS streams over HTTP or HTTPS; sound in AC-3, E-AC-3, MP2 and DTS even on TVs without their own decoder.
+• Matches the TV's refresh rate to the channel where the TV allows it.
+• Diagnostics show how a channel plays and what happened, to find out why one stops.
+
+ON A PHONE OR TABLET
+• Touch controls: swipe on the picture to change channel, search the channel list, full screen.
+• Keep a channel's sound playing with the screen off, if you turn that on.
+
+PRIVATE BY DESIGN
+• No account, no ads, no tracking. Your playlists, favorites and settings stay on your device.
+• MotionTV only connects to the playlist, guide and stream addresses you add.
+
+To try MotionTV without a provider, open Settings → Playlists → Add a playlist link → Use sample test playlist: a short list of openly licensed films and public test streams.
+
+Screenshots show Big Buck Bunny, © Blender Foundation (peach.blender.org), CC BY 3.0. MotionTV uses open-source software, including AndroidX Media3 (ExoPlayer) and FFmpeg.
