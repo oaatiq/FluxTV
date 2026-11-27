@@ -3,7 +3,7 @@
 _Effective 27 November 2026._
 
 MotionTV is an app for watching TV channels from a playlist you add yourself, on Android TVs, TV
-boxes, phones and tablets. It is made by **&lt;DEVELOPER NAME&gt;** ("we"). This policy says what
+boxes, phones and tablets. It is made by **Oussama AATIQ** ("we"). This policy says what
 MotionTV does with information about you. In short: **we collect nothing**. MotionTV has no account,
 no advertising, no analytics and no tracking, and it never sends anything to us.
 
@@ -67,4 +67,4 @@ If this policy changes, the new version will be published at this address with a
 
 ## Contact
 
-Questions about this policy: **&lt;CONTACT EMAIL&gt;**.
+Questions about this policy: [aatiqoussama@gmail.com](mailto:aatiqoussama@gmail.com).

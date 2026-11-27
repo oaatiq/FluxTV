@@ -15,7 +15,7 @@ This folder holds everything the Play listing needs:
 |---|---|
 | `listing/en-US/` | Title, short and full description (the layout `fastlane supply` reads) |
 | `graphics/` | Icon, feature graphic, Android TV banner and phone screenshots |
-| `PRIVACY.md` | The privacy policy Play asks for (fill in the two placeholders first) |
+| `PRIVACY.md` | The privacy policy Play asks for |
 | `demo-playlist.m3u` | Openly licensed films and test streams, for reviewers and "Use sample test playlist" |
 | `review/fgs-media-playback-demo.mp4` | The video Play asks for with the foreground service declaration |
 
@@ -124,8 +124,8 @@ drawn by the GPU: an AVD with `hw.screen=no-touch`, `hw.lcd.width=1920`, `hw.lcd
 
 **Monitor and improve → Policy and programs → App content**. Answers that match the app:
 
-- **Privacy policy**: fill in `PRIVACY.md`'s developer name and contact email, merge it to `main`,
-  and give its address: `https://github.com/oaatiq/FluxTV/blob/main/play/PRIVACY.md`.
+- **Privacy policy**: once `PRIVACY.md` is on `main`, give its address:
+  `https://github.com/oaatiq/FluxTV/blob/main/play/PRIVACY.md`.
 - **Ads**: no ads.
 - **App access**: *All or some functionality is restricted* → add an instruction named *Demo
   playlist*, no user name or password, with: *MotionTV plays the user's own M3U playlist and ships
